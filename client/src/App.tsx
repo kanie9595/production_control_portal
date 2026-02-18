@@ -5,11 +5,19 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import EmployeeChecklist from "./pages/EmployeeChecklist";
+import ManagerDashboard from "./pages/ManagerDashboard";
+import TemplateEditor from "./pages/TemplateEditor";
+import UserManagement from "./pages/UserManagement";
 
 function Router() {
   return (
     <Switch>
       <Route path={"/"} component={Home} />
+      <Route path={"/checklist"} component={EmployeeChecklist} />
+      <Route path={"/dashboard"} component={ManagerDashboard} />
+      <Route path={"/templates"} component={TemplateEditor} />
+      <Route path={"/users"} component={UserManagement} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
@@ -25,9 +33,9 @@ function App() {
             theme="dark"
             toastOptions={{
               style: {
-                background: 'oklch(0.19 0.012 260)',
-                border: '1px solid oklch(0.28 0.015 260)',
-                color: 'oklch(0.9 0.005 260)',
+                background: "oklch(0.19 0.012 260)",
+                border: "1px solid oklch(0.28 0.015 260)",
+                color: "oklch(0.9 0.005 260)",
               },
             }}
           />

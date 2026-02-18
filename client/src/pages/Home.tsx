@@ -1,164 +1,166 @@
-import { useState, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { RotateCcw } from "lucide-react";
-import { toast } from "sonner";
-
-import Sidebar from "@/components/Sidebar";
-import MobileNav from "@/components/MobileNav";
-import StatusBar from "@/components/StatusBar";
-import ChecklistCard from "@/components/ChecklistCard";
-import RecommendationsPanel from "@/components/RecommendationsPanel";
-import { useChecklist } from "@/hooks/useChecklist";
-import { checklistTabs, recommendations } from "@/lib/checklistData";
-
-function formatDateLabel(tabId: string): string {
-  const now = new Date();
-  const months = [
-    "января", "февраля", "марта", "апреля", "мая", "июня",
-    "июля", "августа", "сентября", "октября", "ноября", "декабря",
-  ];
-  const weekdays = [
-    "Воскресенье", "Понедельник", "Вторник", "Среда",
-    "Четверг", "Пятница", "Суббота",
-  ];
-
-  if (tabId === "daily") {
-    return `${weekdays[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
-  }
-  if (tabId === "weekly") {
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
-    const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
-    const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
-    return `Неделя ${weekNumber}, ${now.getFullYear()}`;
-  }
-  const monthNames = [
-    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
-  ];
-  return `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
-}
-
-function getPeriodLabel(tabId: string): string {
-  switch (tabId) {
-    case "daily": return "Ежедневные задачи";
-    case "weekly": return "Еженедельные задачи";
-    case "monthly": return "Ежемесячные задачи";
-    default: return "";
-  }
-}
+import { useAuth } from "@/_core/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
+import { Button } from "@/components/ui/button";
+import { getLoginUrl } from "@/const";
+import { useLocation } from "wouter";
+import {
+  Factory,
+  ClipboardList,
+  LayoutDashboard,
+  Settings,
+  Users,
+  Loader2,
+  LogOut,
+} from "lucide-react";
+import { useEffect } from "react";
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState("daily");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const { user, loading, isAuthenticated, logout } = useAuth();
+  const [, setLocation] = useLocation();
+  const seedMutation = trpc.seed.run.useMutation();
 
-  const { toggleItem, setNote, isChecked, getNote, getProgress, resetAll } =
-    useChecklist(activeTab);
+  // Auto-seed on first admin login
+  useEffect(() => {
+    if (user?.role === "admin" && isAuthenticated) {
+      seedMutation.mutate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.role, isAuthenticated]);
 
-  const currentTab = useMemo(
-    () => checklistTabs.find((t) => t.id === activeTab),
-    [activeTab]
-  );
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "oklch(0.16 0.01 260)" }}>
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Загрузка...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const allItemIds = useMemo(() => {
-    if (!currentTab) return [];
-    return currentTab.sections.flatMap((s) => s.items.map((i) => i.id));
-  }, [currentTab]);
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "oklch(0.16 0.01 260)" }}>
+        <div className="max-w-md w-full mx-4">
+          <div className="rounded-2xl border border-border p-8 text-center" style={{ background: "oklch(0.18 0.012 260)" }}>
+            <div className="w-16 h-16 rounded-2xl mx-auto mb-6 flex items-center justify-center" style={{ background: "oklch(0.78 0.16 75 / 0.15)" }}>
+              <Factory className="w-8 h-8 text-primary" />
+            </div>
+            <h1 className="font-mono text-2xl font-bold text-foreground mb-2">MPC</h1>
+            <p className="text-sm text-muted-foreground mb-1">Manus Production Control</p>
+            <p className="text-xs text-muted-foreground mb-8">Система управления производственными чек-листами</p>
+            <Button
+              onClick={() => { window.location.href = getLoginUrl(); }}
+              size="lg"
+              className="w-full font-mono"
+            >
+              Войти в систему
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const totalProgress = useMemo(
-    () => getProgress(allItemIds),
-    [getProgress, allItemIds]
-  );
-
-  const handleReset = () => {
-    resetAll();
-    toast.success("Чек-лист сброшен", {
-      description: "Все отметки и примечания удалены для текущего периода.",
-    });
-  };
+  const isAdmin = user?.role === "admin";
 
   return (
-    <div className="min-h-screen flex">
-      {/* Desktop Sidebar */}
-      <div className="hidden lg:block">
-        <Sidebar
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-        />
-      </div>
+    <div className="min-h-screen" style={{ background: "oklch(0.16 0.01 260)" }}>
+      {/* Header */}
+      <header className="border-b border-border" style={{ background: "oklch(0.14 0.01 260)" }}>
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "oklch(0.78 0.16 75 / 0.15)" }}>
+              <Factory className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <p className="font-mono text-sm font-semibold text-primary">MPC</p>
+              <p className="text-[10px] text-muted-foreground">Production Control</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-sm font-medium text-foreground">{user?.name ?? "Пользователь"}</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                {isAdmin ? "Администратор" : (user?.productionRole ?? "Сотрудник")}
+              </p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={logout} className="text-muted-foreground hover:text-destructive">
+              <LogOut className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </header>
 
-      {/* Main content */}
-      <main
-        className={`flex-1 transition-all duration-300 ${
-          sidebarCollapsed ? "lg:ml-[68px]" : "lg:ml-[220px]"
-        } pb-20 lg:pb-0`}
-      >
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 lg:py-8">
-          <AnimatePresence mode="wait">
-            {activeTab === "tips" ? (
-              <motion.div
-                key="tips"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.25 }}
-              >
-                <RecommendationsPanel recommendations={recommendations} />
-              </motion.div>
-            ) : currentTab ? (
-              <motion.div
-                key={activeTab}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.25 }}
-                className="space-y-5"
-              >
-                {/* Status bar */}
-                <StatusBar
-                  completed={totalProgress.completed}
-                  total={totalProgress.total}
-                  percent={totalProgress.percent}
-                  periodLabel={getPeriodLabel(activeTab)}
-                  dateLabel={formatDateLabel(activeTab)}
-                />
+      {/* Main */}
+      <main className="max-w-5xl mx-auto px-4 py-10">
+        <div className="mb-8">
+          <h1 className="font-mono text-2xl font-bold text-foreground mb-2">
+            Добро пожаловать, {user?.name?.split(" ")[0] ?? "Пользователь"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {isAdmin
+              ? "Вы вошли как администратор. Выберите раздел для работы."
+              : "Выберите ваш чек-лист для заполнения."}
+          </p>
+        </div>
 
-                {/* Reset button */}
-                <div className="flex justify-end">
-                  <button
-                    onClick={handleReset}
-                    className="flex items-center gap-2 text-xs text-muted-foreground hover:text-destructive transition-colors px-3 py-1.5 rounded-lg hover:bg-destructive/10"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    Сбросить
-                  </button>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Employee checklist — always visible */}
+          <button
+            onClick={() => setLocation("/checklist")}
+            className="rounded-xl border border-border p-6 text-left hover:border-primary/40 transition-all duration-300 group"
+            style={{ background: "oklch(0.18 0.012 260)" }}
+          >
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform" style={{ background: "oklch(0.78 0.16 75 / 0.12)" }}>
+              <ClipboardList className="w-6 h-6 text-primary" />
+            </div>
+            <h3 className="font-mono text-sm font-semibold text-foreground mb-1">Мой чек-лист</h3>
+            <p className="text-xs text-muted-foreground">Заполнить чек-лист за текущий период</p>
+          </button>
+
+          {/* Admin-only sections */}
+          {isAdmin && (
+            <>
+              <button
+                onClick={() => setLocation("/dashboard")}
+                className="rounded-xl border border-border p-6 text-left hover:border-primary/40 transition-all duration-300 group"
+                style={{ background: "oklch(0.18 0.012 260)" }}
+              >
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform" style={{ background: "oklch(0.7 0.18 145 / 0.12)" }}>
+                  <LayoutDashboard className="w-6 h-6" style={{ color: "oklch(0.7 0.18 145)" }} />
                 </div>
+                <h3 className="font-mono text-sm font-semibold text-foreground mb-1">Мониторинг</h3>
+                <p className="text-xs text-muted-foreground">Просмотр чек-листов сотрудников в реальном времени</p>
+              </button>
 
-                {/* Checklist sections */}
-                {currentTab.sections.map((section) => {
-                  const sectionItemIds = section.items.map((i) => i.id);
-                  const sectionProgress = getProgress(sectionItemIds);
-                  return (
-                    <ChecklistCard
-                      key={section.id}
-                      section={section}
-                      isChecked={isChecked}
-                      getNote={getNote}
-                      onToggle={toggleItem}
-                      onSetNote={setNote}
-                      progress={sectionProgress}
-                    />
-                  );
-                })}
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
+              <button
+                onClick={() => setLocation("/templates")}
+                className="rounded-xl border border-border p-6 text-left hover:border-primary/40 transition-all duration-300 group"
+                style={{ background: "oklch(0.18 0.012 260)" }}
+              >
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform" style={{ background: "oklch(0.65 0.15 250 / 0.12)" }}>
+                  <Settings className="w-6 h-6" style={{ color: "oklch(0.65 0.15 250)" }} />
+                </div>
+                <h3 className="font-mono text-sm font-semibold text-foreground mb-1">Шаблоны чек-листов</h3>
+                <p className="text-xs text-muted-foreground">Редактировать пункты чек-листов для всех должностей</p>
+              </button>
+
+              <button
+                onClick={() => setLocation("/users")}
+                className="rounded-xl border border-border p-6 text-left hover:border-primary/40 transition-all duration-300 group"
+                style={{ background: "oklch(0.18 0.012 260)" }}
+              >
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform" style={{ background: "oklch(0.6 0.22 25 / 0.12)" }}>
+                  <Users className="w-6 h-6" style={{ color: "oklch(0.6 0.22 25)" }} />
+                </div>
+                <h3 className="font-mono text-sm font-semibold text-foreground mb-1">Сотрудники</h3>
+                <p className="text-xs text-muted-foreground">Управление ролями и назначение чек-листов</p>
+              </button>
+            </>
+          )}
         </div>
       </main>
-
-      {/* Mobile navigation */}
-      <MobileNav activeTab={activeTab} onTabChange={setActiveTab} />
     </div>
   );
 }
