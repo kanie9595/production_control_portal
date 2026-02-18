@@ -18,18 +18,22 @@ import {
 } from "lucide-react";
 import { useState, useMemo, useCallback } from "react";
 
+const MANAGER_ROLES = ["production_manager", "production_director"];
+
 export default function ManagerDashboard() {
   const { user, loading: authLoading } = useAuth({ redirectOnUnauthenticated: true });
   const [, setLocation] = useLocation();
   const [activePeriod, setActivePeriod] = useState<"daily" | "weekly" | "monthly">("daily");
   const [expandedUser, setExpandedUser] = useState<number | null>(null);
 
+  const isAdmin = user?.role === "admin";
+  const isManager = MANAGER_ROLES.includes(user?.productionRole ?? "");
+  const canView = isAdmin || isManager;
+
   const overviewQuery = trpc.dashboard.overview.useQuery(
     { periodType: activePeriod },
-    { refetchInterval: 15000 } // Auto-refresh every 15 seconds
+    { refetchInterval: 15000, enabled: canView }
   );
-
-  const isAdmin = user?.role === "admin";
 
   // Group by user
   const userGroups = useMemo(() => {
@@ -76,13 +80,16 @@ export default function ManagerDashboard() {
     );
   }
 
-  if (!isAdmin) {
+  if (!canView) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "oklch(0.16 0.01 260)" }}>
         <div className="text-center">
           <AlertCircle className="w-12 h-12 mx-auto mb-4 text-destructive" />
-          <p className="text-sm text-muted-foreground">Доступ только для администратора</p>
-          <Button variant="outline" onClick={() => setLocation("/")} className="mt-4 font-mono">
+          <p className="text-sm text-foreground font-medium mb-1">Доступ ограничен</p>
+          <p className="text-xs text-muted-foreground mb-4">
+            Мониторинг доступен только для Начальника производства и Директора производства
+          </p>
+          <Button variant="outline" onClick={() => setLocation("/")} className="font-mono">
             <ArrowLeft className="w-4 h-4 mr-2" /> На главную
           </Button>
         </div>
@@ -215,33 +222,30 @@ export default function ManagerDashboard() {
                       </div>
                       <Progress value={item.percent} className="h-1.5 mb-3" />
                       <div className="space-y-1.5">
-                        {item.items.map((ii) => {
-                          const templateItem = ii.templateItemId;
-                          return (
-                            <div key={ii.id} className="flex items-start gap-2">
-                              <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${ii.checked ? "bg-green-500/20" : "bg-muted/30"}`}>
-                                {ii.checked ? (
-                                  <CheckCircle2 className="w-3 h-3" style={{ color: "oklch(0.7 0.18 145)" }} />
-                                ) : (
-                                  <div className="w-2 h-2 rounded-full bg-muted-foreground/30" />
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className={`text-xs ${ii.checked ? "text-muted-foreground line-through" : "text-foreground"}`}>
-                                  Пункт #{ii.templateItemId}
-                                </p>
-                                {ii.note && (
-                                  <p className="text-[10px] text-muted-foreground italic mt-0.5">📝 {ii.note}</p>
-                                )}
-                                {ii.checkedAt && (
-                                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                                    ✓ {new Date(ii.checkedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
-                                  </p>
-                                )}
-                              </div>
+                        {item.items.map((ii) => (
+                          <div key={ii.id} className="flex items-start gap-2">
+                            <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${ii.checked ? "bg-green-500/20" : "bg-muted/30"}`}>
+                              {ii.checked ? (
+                                <CheckCircle2 className="w-3 h-3" style={{ color: "oklch(0.7 0.18 145)" }} />
+                              ) : (
+                                <div className="w-2 h-2 rounded-full bg-muted-foreground/30" />
+                              )}
                             </div>
-                          );
-                        })}
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-xs ${ii.checked ? "text-muted-foreground line-through" : "text-foreground"}`}>
+                                {ii.text}
+                              </p>
+                              {ii.note && (
+                                <p className="text-[10px] text-muted-foreground italic mt-0.5">📝 {ii.note}</p>
+                              )}
+                              {ii.checkedAt && (
+                                <p className="text-[10px] text-muted-foreground mt-0.5">
+                                  ✓ {new Date(ii.checkedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   ))}

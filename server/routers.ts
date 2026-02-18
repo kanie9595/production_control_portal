@@ -6,8 +6,21 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
 
+// Admin-only procedure (site admin)
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+  return next({ ctx });
+});
+
+// Manager procedure: accessible by admin OR users with productionRole = "production_manager" or "production_director"
+const MANAGER_ROLES = ["production_manager", "production_director"];
+
+const managerProcedure = protectedProcedure.use(({ ctx, next }) => {
+  const isAdmin = ctx.user.role === "admin";
+  const isManager = MANAGER_ROLES.includes(ctx.user.productionRole ?? "");
+  if (!isAdmin && !isManager) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Доступ только для Начальника производства и Директора производства" });
+  }
   return next({ ctx });
 });
 
@@ -35,7 +48,7 @@ export const appRouter = router({
       }),
   }),
 
-  // ============ USERS (admin) ============
+  // ============ USERS (admin only) ============
   users: router({
     list: adminProcedure.query(async () => {
       return db.getAllUsers();
@@ -135,15 +148,16 @@ export const appRouter = router({
       }),
   }),
 
-  // ============ MANAGER DASHBOARD ============
+  // ============ MANAGER DASHBOARD (manager procedure) ============
   dashboard: router({
-    overview: adminProcedure
+    overview: managerProcedure
       .input(z.object({ periodType: z.enum(["daily", "weekly", "monthly"]) }))
       .query(async ({ input }) => {
         const instances = await db.getAllInstancesForPeriod(input.periodType);
         const allUsers = await db.getAllUsers();
         const roles = await db.getAllProductionRoles();
         const templates = await db.getAllTemplates();
+        const allTemplateItems = await db.getAllTemplateItems();
 
         const results = [];
         for (const instance of instances) {
@@ -153,6 +167,11 @@ export const appRouter = router({
           const role = template ? roles.find((r) => r.id === template.roleId) : null;
           const total = items.length;
           const completed = items.filter((i) => i.checked).length;
+          // Enrich items with template item text
+          const enrichedItems = items.map((ii) => {
+            const ti = allTemplateItems.find((t: { id: number; text: string }) => t.id === ii.templateItemId);
+            return { ...ii, text: ti?.text ?? `Пункт #${ii.templateItemId}` };
+          });
           results.push({
             instanceId: instance.id,
             userId: instance.userId,
@@ -164,7 +183,7 @@ export const appRouter = router({
             total,
             completed,
             percent: total > 0 ? Math.round((completed / total) * 100) : 0,
-            items,
+            items: enrichedItems,
             updatedAt: instance.updatedAt,
           });
         }
@@ -176,7 +195,7 @@ export const appRouter = router({
   seed: router({
     run: adminProcedure.mutation(async () => {
       const existingRoles = await db.getAllProductionRoles();
-      if (existingRoles.length > 0) return { message: "Already seeded" };
+      const existingSlugs = new Set(existingRoles.map((r) => r.slug));
 
       const rolesData = [
         { slug: "packer", name: "Упаковщик", description: "Упаковщик готовой продукции", sortOrder: 1 },
@@ -184,15 +203,26 @@ export const appRouter = router({
         { slug: "mechanic", name: "Механик", description: "Механик по обслуживанию оборудования", sortOrder: 3 },
         { slug: "shift_supervisor", name: "Начальник смены", description: "Начальник производственной смены", sortOrder: 4 },
         { slug: "production_manager", name: "Начальник производства", description: "Начальник производства", sortOrder: 5 },
+        // New roles
+        { slug: "production_director", name: "Директор производства", description: "Директор производства, контролирует все процессы", sortOrder: 6 },
+        { slug: "shift_assistant", name: "Помощница начальника смены", description: "Помощница начальника смены", sortOrder: 7 },
+        { slug: "packer_foreman", name: "Бригадир упаковщиков", description: "Бригадир упаковщиков, контролирует упаковочную линию", sortOrder: 8 },
+        { slug: "senior_mechanic", name: "Старший механик", description: "Старший механик, руководит отделом механиков", sortOrder: 9 },
+        { slug: "senior_adjuster", name: "Старший наладчик ТПА", description: "Старший наладчик ТПА, руководит командами наладчиков", sortOrder: 10 },
       ];
 
       const roleIds: Record<string, number> = {};
+      // Reuse existing role IDs
+      for (const er of existingRoles) {
+        roleIds[er.slug] = er.id;
+      }
+      // Create only new roles
       for (const r of rolesData) {
+        if (existingSlugs.has(r.slug)) continue;
         const id = await db.createProductionRole(r);
         if (id) roleIds[r.slug] = id;
       }
 
-      // Seed templates and items for each role
       const seedTemplates: Array<{
         roleSlug: string;
         periodType: "daily" | "weekly" | "monthly";
@@ -299,7 +329,7 @@ export const appRouter = router({
             ]},
           ],
         },
-        // === PRODUCTION MANAGER ===
+        // === PRODUCTION MANAGER (daily) ===
         {
           roleSlug: "production_manager", periodType: "daily", title: "Ежедневные задачи начальника производства",
           sections: [
@@ -323,7 +353,7 @@ export const appRouter = router({
             ]},
           ],
         },
-        // WEEKLY for production manager
+        // === PRODUCTION MANAGER (weekly) ===
         {
           roleSlug: "production_manager", periodType: "weekly", title: "Еженедельные задачи начальника производства",
           sections: [
@@ -342,7 +372,7 @@ export const appRouter = router({
             ]},
           ],
         },
-        // MONTHLY for production manager
+        // === PRODUCTION MANAGER (monthly) ===
         {
           roleSlug: "production_manager", periodType: "monthly", title: "Ежемесячные задачи начальника производства",
           sections: [
@@ -361,11 +391,184 @@ export const appRouter = router({
             ]},
           ],
         },
+        // === PRODUCTION DIRECTOR (daily) ===
+        {
+          roleSlug: "production_director", periodType: "daily", title: "Ежедневные задачи директора производства",
+          sections: [
+            { title: "Утро", icon: "sunrise", items: [
+              "Просмотр сводки по всем производственным площадкам",
+              "Анализ ключевых показателей за прошедшие сутки (OEE, брак, выполнение плана)",
+              "Проверка статуса критических заказов и сроков отгрузки",
+              "Краткое совещание с начальником производства (приоритеты дня)",
+            ]},
+            { title: "В течение дня", icon: "sun", items: [
+              "Контроль исполнения стратегических решений",
+              "Работа с поставщиками сырья и оборудования",
+              "Координация с отделом продаж по приоритетам заказов",
+              "Решение эскалированных проблем (крупные поломки, массовый брак)",
+              "Контроль бюджета и затрат производства",
+            ]},
+            { title: "Вечер", icon: "sunset", items: [
+              "Подведение итогов дня с начальником производства",
+              "Утверждение плана на следующий день",
+            ]},
+          ],
+        },
+        // === SHIFT ASSISTANT (daily) ===
+        {
+          roleSlug: "shift_assistant", periodType: "daily", title: "Ежедневный чек-лист помощницы начальника смены",
+          sections: [
+            { title: "Начало смены", icon: "sunrise", items: [
+              "Проверить явку персонала и отметить в табеле",
+              "Распределить упаковщиков по рабочим местам согласно указаниям начальника смены",
+              "Проверить наличие расходных материалов (коробки, стрейч-плёнка, скотч, этикетки)",
+              "Подготовить журналы учёта (выработки, брака, простоев)",
+              "Проверить чистоту и порядок в зоне упаковки",
+            ]},
+            { title: "В течение смены", icon: "sun", items: [
+              "Контроль соблюдения упаковщиками стандартов упаковки",
+              "Помощь в решении мелких оперативных вопросов (замена материалов, перестановка)",
+              "Ведение учёта выработки по каждому рабочему месту",
+              "Фиксация случаев брака и информирование начальника смены",
+              "Контроль соблюдения перерывов и дисциплины",
+              "Обеспечение своевременной подачи тары и материалов на линию",
+            ]},
+            { title: "Конец смены", icon: "sunset", items: [
+              "Сбор данных по выработке от всех упаковщиков",
+              "Подготовка сводки по смене для начальника смены",
+              "Контроль уборки рабочих мест",
+              "Передача информации помощнице следующей смены",
+            ]},
+          ],
+        },
+        // === PACKER FOREMAN (daily) ===
+        {
+          roleSlug: "packer_foreman", periodType: "daily", title: "Ежедневный чек-лист бригадира упаковщиков",
+          sections: [
+            { title: "Начало смены", icon: "sunrise", items: [
+              "Принять информацию от предыдущей смены (проблемы, остатки, задачи)",
+              "Проверить явку бригады, при необходимости перераспределить людей",
+              "Проверить готовность рабочих мест (чистота, инструмент, материалы)",
+              "Ознакомиться с планом выпуска и приоритетами на смену",
+              "Провести краткий инструктаж бригады (качество, безопасность, план)",
+            ]},
+            { title: "В течение смены", icon: "sun", items: [
+              "Контроль качества упаковки (выборочные проверки каждый час)",
+              "Контроль скорости работы и выполнения нормы выработки",
+              "Обучение новых сотрудников на рабочем месте",
+              "Контроль правильности маркировки и этикетирования",
+              "Решение конфликтных ситуаций в бригаде",
+              "Информирование начальника смены о проблемах и отклонениях",
+              "Контроль соблюдения техники безопасности",
+            ]},
+            { title: "Конец смены", icon: "sunset", items: [
+              "Подсчёт выработки бригады и сравнение с планом",
+              "Заполнение отчёта по смене (выработка, брак, замечания)",
+              "Контроль уборки и подготовки рабочих мест для следующей смены",
+              "Передача информации бригадиру следующей смены",
+            ]},
+          ],
+        },
+        // === SENIOR MECHANIC (daily) ===
+        {
+          roleSlug: "senior_mechanic", periodType: "daily", title: "Ежедневный чек-лист старшего механика",
+          sections: [
+            { title: "Начало рабочего дня", icon: "sunrise", items: [
+              "Получить информацию от ночной/предыдущей смены о состоянии оборудования",
+              "Распределить задачи между механиками на день",
+              "Проверить статус незавершённых ремонтов",
+              "Проверить наличие необходимых запчастей и инструмента",
+              "Провести планёрку с механиками (приоритеты, безопасность)",
+            ]},
+            { title: "В течение дня", icon: "sun", items: [
+              "Контроль выполнения заявок на ремонт механиками",
+              "Личное участие в сложных ремонтах и диагностике",
+              "Контроль выполнения графика ППР",
+              "Ведение учёта расхода запчастей и материалов",
+              "Координация с наладчиками по вопросам оборудования",
+              "Подготовка заявок на закупку запчастей",
+              "Контроль соблюдения техники безопасности при ремонтных работах",
+            ]},
+            { title: "Конец дня", icon: "sunset", items: [
+              "Проверка завершённости всех плановых работ",
+              "Обновление журнала ремонтов и дефектов",
+              "Отчёт начальнику производства о состоянии оборудования",
+              "Планирование работ на следующий день",
+            ]},
+          ],
+        },
+        // === SENIOR MECHANIC (weekly) ===
+        {
+          roleSlug: "senior_mechanic", periodType: "weekly", title: "Еженедельные задачи старшего механика",
+          sections: [
+            { title: "Аналитика", icon: "bar-chart", items: [
+              "Анализ статистики поломок за неделю (частота, типы, причины)",
+              "Анализ времени простоев по причине ремонтов (MTTR)",
+              "Контроль расхода запчастей и масел",
+            ]},
+            { title: "Управление", icon: "users", items: [
+              "Планирование графика ППР на следующую неделю",
+              "Проверка квалификации механиков, планирование обучения",
+              "Инвентаризация склада запчастей",
+              "Совещание с начальником производства по техническим вопросам",
+            ]},
+          ],
+        },
+        // === SENIOR ADJUSTER (daily) ===
+        {
+          roleSlug: "senior_adjuster", periodType: "daily", title: "Ежедневный чек-лист старшего наладчика ТПА",
+          sections: [
+            { title: "Начало рабочего дня", icon: "sunrise", items: [
+              "Получить информацию от предыдущей смены о работе оборудования",
+              "Распределить задачи между наладчиками обеих команд",
+              "Проверить технологические карты на текущие заказы",
+              "Проверить параметры работы всех ТПА (температура, давление, цикл)",
+              "Провести планёрку с наладчиками (приоритеты, проблемные машины)",
+            ]},
+            { title: "В течение дня", icon: "sun", items: [
+              "Контроль качества настройки оборудования наладчиками",
+              "Личное участие в сложных переналадках и запусках новых пресс-форм",
+              "Контроль соблюдения технологических режимов на всех ТПА",
+              "Анализ причин брака и корректировка параметров",
+              "Координация с механиками по вопросам технического состояния ТПА",
+              "Ведение журнала переналадок и изменений параметров",
+              "Обучение наладчиков новым методам и технологиям",
+            ]},
+            { title: "Конец дня", icon: "sunset", items: [
+              "Проверка стабильности работы всех ТПА перед передачей смены",
+              "Обновление технологических карт при изменении параметров",
+              "Отчёт начальнику производства о состоянии наладки",
+              "Планирование переналадок на следующий день",
+            ]},
+          ],
+        },
+        // === SENIOR ADJUSTER (weekly) ===
+        {
+          roleSlug: "senior_adjuster", periodType: "weekly", title: "Еженедельные задачи старшего наладчика ТПА",
+          sections: [
+            { title: "Аналитика", icon: "bar-chart", items: [
+              "Анализ статистики брака по каждому ТПА за неделю",
+              "Анализ стабильности циклов и отклонений параметров",
+              "Оценка состояния пресс-форм (износ, необходимость профилактики)",
+            ]},
+            { title: "Управление", icon: "users", items: [
+              "Планирование переналадок на следующую неделю",
+              "Проверка квалификации наладчиков, планирование обучения",
+              "Совещание с начальником производства по технологическим вопросам",
+              "Обновление базы технологических карт",
+            ]},
+          ],
+        },
       ];
+
+      const existingTemplates = await db.getAllTemplates();
+      const existingTemplateKeys = new Set(existingTemplates.map((t) => `${t.roleId}-${t.periodType}`));
 
       for (const tmpl of seedTemplates) {
         const roleId = roleIds[tmpl.roleSlug];
         if (!roleId) continue;
+        // Skip if template already exists for this role+period
+        if (existingTemplateKeys.has(`${roleId}-${tmpl.periodType}`)) continue;
         const templateId = await db.createTemplate({ roleId, periodType: tmpl.periodType, title: tmpl.title });
         if (!templateId) continue;
         let sortOrder = 0;
@@ -382,7 +585,7 @@ export const appRouter = router({
         }
       }
 
-      return { message: "Seeded successfully" };
+      return { message: `Seeded successfully. Roles: ${Object.keys(roleIds).length}, new templates created.` };
     }),
   }),
 });

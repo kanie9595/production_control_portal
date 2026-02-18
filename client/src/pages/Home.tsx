@@ -11,8 +11,11 @@ import {
   Users,
   Loader2,
   LogOut,
+  HelpCircle,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+
+const MANAGER_ROLES = ["production_manager", "production_director"];
 
 export default function Home() {
   const { user, loading, isAuthenticated, logout } = useAuth();
@@ -26,6 +29,13 @@ export default function Home() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.role, isAuthenticated]);
+
+  const isAdmin = user?.role === "admin";
+  const isManager = useMemo(
+    () => MANAGER_ROLES.includes(user?.productionRole ?? ""),
+    [user?.productionRole]
+  );
+  const canViewDashboard = isAdmin || isManager;
 
   if (loading) {
     return (
@@ -56,13 +66,36 @@ export default function Home() {
             >
               Войти в систему
             </Button>
+            <button
+              onClick={() => setLocation("/how-to-register")}
+              className="mt-4 text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5 mx-auto"
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+              Как зарегистрироваться?
+            </button>
           </div>
         </div>
       </div>
     );
   }
 
-  const isAdmin = user?.role === "admin";
+  const productionRoleLabel = (() => {
+    const role = user?.productionRole;
+    if (!role) return "Сотрудник";
+    const roleNames: Record<string, string> = {
+      packer: "Упаковщик",
+      adjuster: "Наладчик ТПА",
+      mechanic: "Механик",
+      shift_supervisor: "Начальник смены",
+      production_manager: "Начальник производства",
+      production_director: "Директор производства",
+      shift_assistant: "Помощница начальника смены",
+      packer_foreman: "Бригадир упаковщиков",
+      senior_mechanic: "Старший механик",
+      senior_adjuster: "Старший наладчик ТПА",
+    };
+    return roleNames[role] ?? role;
+  })();
 
   return (
     <div className="min-h-screen" style={{ background: "oklch(0.16 0.01 260)" }}>
@@ -82,7 +115,7 @@ export default function Home() {
             <div className="text-right">
               <p className="text-sm font-medium text-foreground">{user?.name ?? "Пользователь"}</p>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                {isAdmin ? "Администратор" : (user?.productionRole ?? "Сотрудник")}
+                {isAdmin ? "Администратор" : productionRoleLabel}
               </p>
             </div>
             <Button variant="ghost" size="icon" onClick={logout} className="text-muted-foreground hover:text-destructive">
@@ -101,7 +134,9 @@ export default function Home() {
           <p className="text-sm text-muted-foreground">
             {isAdmin
               ? "Вы вошли как администратор. Выберите раздел для работы."
-              : "Выберите ваш чек-лист для заполнения."}
+              : canViewDashboard
+                ? "Вы можете заполнить свой чек-лист или просмотреть чек-листы сотрудников."
+                : "Выберите ваш чек-лист для заполнения."}
           </p>
         </div>
 
@@ -119,21 +154,24 @@ export default function Home() {
             <p className="text-xs text-muted-foreground">Заполнить чек-лист за текущий период</p>
           </button>
 
+          {/* Dashboard — visible to admin, production_manager, production_director */}
+          {canViewDashboard && (
+            <button
+              onClick={() => setLocation("/dashboard")}
+              className="rounded-xl border border-border p-6 text-left hover:border-primary/40 transition-all duration-300 group"
+              style={{ background: "oklch(0.18 0.012 260)" }}
+            >
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform" style={{ background: "oklch(0.7 0.18 145 / 0.12)" }}>
+                <LayoutDashboard className="w-6 h-6" style={{ color: "oklch(0.7 0.18 145)" }} />
+              </div>
+              <h3 className="font-mono text-sm font-semibold text-foreground mb-1">Мониторинг</h3>
+              <p className="text-xs text-muted-foreground">Просмотр чек-листов сотрудников в реальном времени</p>
+            </button>
+          )}
+
           {/* Admin-only sections */}
           {isAdmin && (
             <>
-              <button
-                onClick={() => setLocation("/dashboard")}
-                className="rounded-xl border border-border p-6 text-left hover:border-primary/40 transition-all duration-300 group"
-                style={{ background: "oklch(0.18 0.012 260)" }}
-              >
-                <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform" style={{ background: "oklch(0.7 0.18 145 / 0.12)" }}>
-                  <LayoutDashboard className="w-6 h-6" style={{ color: "oklch(0.7 0.18 145)" }} />
-                </div>
-                <h3 className="font-mono text-sm font-semibold text-foreground mb-1">Мониторинг</h3>
-                <p className="text-xs text-muted-foreground">Просмотр чек-листов сотрудников в реальном времени</p>
-              </button>
-
               <button
                 onClick={() => setLocation("/templates")}
                 className="rounded-xl border border-border p-6 text-left hover:border-primary/40 transition-all duration-300 group"
@@ -159,6 +197,19 @@ export default function Home() {
               </button>
             </>
           )}
+
+          {/* How to register — always visible */}
+          <button
+            onClick={() => setLocation("/how-to-register")}
+            className="rounded-xl border border-border p-6 text-left hover:border-primary/40 transition-all duration-300 group"
+            style={{ background: "oklch(0.18 0.012 260)" }}
+          >
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform" style={{ background: "oklch(0.5 0.1 280 / 0.12)" }}>
+              <HelpCircle className="w-6 h-6" style={{ color: "oklch(0.5 0.1 280)" }} />
+            </div>
+            <h3 className="font-mono text-sm font-semibold text-foreground mb-1">Как зарегистрироваться</h3>
+            <p className="text-xs text-muted-foreground">Инструкция для новых сотрудников</p>
+          </button>
         </div>
       </main>
     </div>

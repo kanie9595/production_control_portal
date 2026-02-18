@@ -9,6 +9,7 @@ import EmployeeChecklist from "./pages/EmployeeChecklist";
 import ManagerDashboard from "./pages/ManagerDashboard";
 import TemplateEditor from "./pages/TemplateEditor";
 import UserManagement from "./pages/UserManagement";
+import HowToRegister from "./pages/HowToRegister";
 
 function Router() {
   return (
@@ -18,6 +19,7 @@ function Router() {
       <Route path={"/dashboard"} component={ManagerDashboard} />
       <Route path={"/templates"} component={TemplateEditor} />
       <Route path={"/users"} component={UserManagement} />
+      <Route path={"/how-to-register"} component={HowToRegister} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

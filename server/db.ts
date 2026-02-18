@@ -167,6 +167,12 @@ export async function deleteTemplateItem(id: number) {
   await db.delete(templateItems).where(eq(templateItems.id, id));
 }
 
+export async function getAllTemplateItems() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(templateItems).orderBy(asc(templateItems.sortOrder));
+}
+
 // ============ CHECKLIST INSTANCES ============
 
 export async function getOrCreateInstance(templateId: number, userId: number, dateKey: string) {

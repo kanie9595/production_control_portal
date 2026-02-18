@@ -7,6 +7,14 @@ vi.mock("./db", () => {
   const roles = [
     { id: 1, slug: "packer", name: "Упаковщик", description: "Упаковщик готовой продукции", sortOrder: 1, createdAt: new Date(), updatedAt: new Date() },
     { id: 2, slug: "adjuster", name: "Наладчик ТПА", description: "Наладчик термопластавтоматов", sortOrder: 2, createdAt: new Date(), updatedAt: new Date() },
+    { id: 3, slug: "mechanic", name: "Механик", description: "Механик", sortOrder: 3, createdAt: new Date(), updatedAt: new Date() },
+    { id: 4, slug: "shift_supervisor", name: "Начальник смены", description: "Начальник смены", sortOrder: 4, createdAt: new Date(), updatedAt: new Date() },
+    { id: 5, slug: "production_manager", name: "Начальник производства", description: "Начальник производства", sortOrder: 5, createdAt: new Date(), updatedAt: new Date() },
+    { id: 6, slug: "production_director", name: "Директор производства", description: "Директор производства", sortOrder: 6, createdAt: new Date(), updatedAt: new Date() },
+    { id: 7, slug: "shift_assistant", name: "Помощница начальника смены", description: "Помощница начальника смены", sortOrder: 7, createdAt: new Date(), updatedAt: new Date() },
+    { id: 8, slug: "packer_foreman", name: "Бригадир упаковщиков", description: "Бригадир упаковщиков", sortOrder: 8, createdAt: new Date(), updatedAt: new Date() },
+    { id: 9, slug: "senior_mechanic", name: "Старший механик", description: "Старший механик", sortOrder: 9, createdAt: new Date(), updatedAt: new Date() },
+    { id: 10, slug: "senior_adjuster", name: "Старший наладчик ТПА", description: "Старший наладчик ТПА", sortOrder: 10, createdAt: new Date(), updatedAt: new Date() },
   ];
 
   const templates = [
@@ -31,6 +39,8 @@ vi.mock("./db", () => {
   const users = [
     { id: 1, openId: "admin-1", name: "Админ", email: "admin@test.com", loginMethod: "manus", role: "admin", productionRole: "production_manager", createdAt: new Date(), updatedAt: new Date(), lastSignedIn: new Date() },
     { id: 2, openId: "user-1", name: "Иванов", email: "ivanov@test.com", loginMethod: "manus", role: "user", productionRole: "packer", createdAt: new Date(), updatedAt: new Date(), lastSignedIn: new Date() },
+    { id: 3, openId: "director-1", name: "Директор", email: "director@test.com", loginMethod: "manus", role: "user", productionRole: "production_director", createdAt: new Date(), updatedAt: new Date(), lastSignedIn: new Date() },
+    { id: 4, openId: "shift-sup-1", name: "Начальник смены", email: "shift@test.com", loginMethod: "manus", role: "user", productionRole: "shift_supervisor", createdAt: new Date(), updatedAt: new Date(), lastSignedIn: new Date() },
   ];
 
   return {
@@ -58,6 +68,7 @@ vi.mock("./db", () => {
     setUserProductionRole: vi.fn().mockResolvedValue(undefined),
     upsertUser: vi.fn().mockResolvedValue(undefined),
     getUserByOpenId: vi.fn().mockResolvedValue(users[0]),
+    getAllTemplateItems: vi.fn().mockResolvedValue(items),
   };
 });
 
@@ -103,6 +114,46 @@ function createEmployeeContext(): TrpcContext {
   };
 }
 
+function createDirectorContext(): TrpcContext {
+  const user: AuthenticatedUser = {
+    id: 3,
+    openId: "director-1",
+    email: "director@test.com",
+    name: "Директор",
+    loginMethod: "manus",
+    role: "user",
+    productionRole: "production_director",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    lastSignedIn: new Date(),
+  };
+  return {
+    user,
+    req: { protocol: "https", headers: {} } as TrpcContext["req"],
+    res: { clearCookie: vi.fn() } as unknown as TrpcContext["res"],
+  };
+}
+
+function createShiftSupervisorContext(): TrpcContext {
+  const user: AuthenticatedUser = {
+    id: 4,
+    openId: "shift-sup-1",
+    email: "shift@test.com",
+    name: "Начальник смены",
+    loginMethod: "manus",
+    role: "user",
+    productionRole: "shift_supervisor",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    lastSignedIn: new Date(),
+  };
+  return {
+    user,
+    req: { protocol: "https", headers: {} } as TrpcContext["req"],
+    res: { clearCookie: vi.fn() } as unknown as TrpcContext["res"],
+  };
+}
+
 function createUnauthContext(): TrpcContext {
   return {
     user: null,
@@ -111,19 +162,25 @@ function createUnauthContext(): TrpcContext {
   };
 }
 
+// ============ ROLES ============
+
 describe("roles.list", () => {
-  it("returns all production roles for any user", async () => {
+  it("returns all 10 production roles", async () => {
     const caller = appRouter.createCaller(createEmployeeContext());
     const roles = await caller.roles.list();
-    expect(roles).toHaveLength(2);
+    expect(roles).toHaveLength(10);
     expect(roles[0].slug).toBe("packer");
-    expect(roles[1].slug).toBe("adjuster");
+    expect(roles[5].slug).toBe("production_director");
+    expect(roles[6].slug).toBe("shift_assistant");
+    expect(roles[7].slug).toBe("packer_foreman");
+    expect(roles[8].slug).toBe("senior_mechanic");
+    expect(roles[9].slug).toBe("senior_adjuster");
   });
 
   it("returns roles even for unauthenticated users", async () => {
     const caller = appRouter.createCaller(createUnauthContext());
     const roles = await caller.roles.list();
-    expect(roles).toHaveLength(2);
+    expect(roles).toHaveLength(10);
   });
 });
 
@@ -145,6 +202,8 @@ describe("roles.create", () => {
     ).rejects.toThrow();
   });
 });
+
+// ============ TEMPLATES ============
 
 describe("templates.list", () => {
   it("returns all templates for authenticated user", async () => {
@@ -209,6 +268,8 @@ describe("templates.deleteItem (admin)", () => {
   });
 });
 
+// ============ INSTANCES ============
+
 describe("instances.getOrCreate", () => {
   it("returns or creates an instance for the user", async () => {
     const caller = appRouter.createCaller(createEmployeeContext());
@@ -247,8 +308,10 @@ describe("instances.setNote", () => {
   });
 });
 
-describe("dashboard.overview (admin)", () => {
-  it("returns overview data for admin", async () => {
+// ============ DASHBOARD ACCESS CONTROL ============
+
+describe("dashboard.overview — access control", () => {
+  it("allows admin to access dashboard", async () => {
     const caller = appRouter.createCaller(createAdminContext());
     const overview = await caller.dashboard.overview({ periodType: "daily" });
     expect(overview).toBeInstanceOf(Array);
@@ -260,19 +323,42 @@ describe("dashboard.overview (admin)", () => {
     expect(overview[0]).toHaveProperty("percent");
   });
 
-  it("rejects non-admin users", async () => {
+  it("allows production_director to access dashboard", async () => {
+    const caller = appRouter.createCaller(createDirectorContext());
+    const overview = await caller.dashboard.overview({ periodType: "daily" });
+    expect(overview).toBeInstanceOf(Array);
+    expect(overview.length).toBeGreaterThan(0);
+  });
+
+  it("rejects regular employee (packer) from dashboard", async () => {
     const caller = appRouter.createCaller(createEmployeeContext());
+    await expect(
+      caller.dashboard.overview({ periodType: "daily" })
+    ).rejects.toThrow();
+  });
+
+  it("rejects shift_supervisor from dashboard", async () => {
+    const caller = appRouter.createCaller(createShiftSupervisorContext());
+    await expect(
+      caller.dashboard.overview({ periodType: "daily" })
+    ).rejects.toThrow();
+  });
+
+  it("rejects unauthenticated users from dashboard", async () => {
+    const caller = appRouter.createCaller(createUnauthContext());
     await expect(
       caller.dashboard.overview({ periodType: "daily" })
     ).rejects.toThrow();
   });
 });
 
+// ============ USER MANAGEMENT ============
+
 describe("users.list (admin)", () => {
   it("returns all users for admin", async () => {
     const caller = appRouter.createCaller(createAdminContext());
     const users = await caller.users.list();
-    expect(users).toHaveLength(2);
+    expect(users).toHaveLength(4);
   });
 
   it("rejects non-admin users", async () => {
@@ -298,5 +384,12 @@ describe("users.setProductionRole (admin)", () => {
       productionRole: null,
     });
     expect(result).toEqual({ success: true });
+  });
+
+  it("rejects non-admin from setting roles", async () => {
+    const caller = appRouter.createCaller(createDirectorContext());
+    await expect(
+      caller.users.setProductionRole({ userId: 2, productionRole: "mechanic" })
+    ).rejects.toThrow();
   });
 });

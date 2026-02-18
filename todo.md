@@ -22,3 +22,20 @@
 - [x] Test all flows end-to-end
 - [x] Fix bugs (no bugs found)
 - [x] Save checkpoint and deliver
+
+## Update 2: New roles, access control, checklists, registration
+- [x] Add role: Директор производства (can view all checklists like Начальник производства)
+- [x] Add role: Помощница начальника смены (with unique checklist)
+- [x] Add role: Бригадир упаковщиков (with unique checklist)
+- [x] Add role: Старший механик (with unique checklist)
+- [x] Add role: Старший наладчик ТПА (with unique checklist)
+- [x] Restrict monitoring dashboard: only Директор производства and Начальник производства can view
+- [x] Hide monitoring/templates/users cards from non-manager roles on Home page
+- [x] Create checklist for Помощница начальника смены
+- [x] Create checklist for Бригадир упаковщиков
+- [x] Create checklist for Старший механик
+- [x] Create checklist for Старший наладчик ТПА
+- [x] Add registration instructions page
+- [x] Update seed data with new roles and checklists
+- [x] Update tests for new access control logic
+- [x] Save checkpoint and deliver
