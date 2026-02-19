@@ -342,6 +342,41 @@ export const appRouter = router({
       .mutation(async ({ input }) => { await db.deleteRecipeComponent(input.id); return { success: true }; }),
   }),
 
+  // ============ ROLE PERMISSIONS ============
+  permissions: router({
+    all: managerProcedure.query(async () => db.getAllRolePermissions()),
+    forRole: managerProcedure
+      .input(z.object({ roleSlug: z.string() }))
+      .query(async ({ input }) => db.getPermissionsForRole(input.roleSlug)),
+    forCurrentUser: protectedProcedure.query(async ({ ctx }) => {
+      const roleSlug = ctx.user.productionRole;
+      if (!roleSlug) return [];
+      return db.getPermissionsForRole(roleSlug);
+    }),
+    update: managerProcedure
+      .input(z.object({ roleSlug: z.string(), module: z.string(), hasAccess: z.boolean() }))
+      .mutation(async ({ input }) => {
+        await db.upsertRolePermission(input.roleSlug, input.module, input.hasAccess);
+        return { success: true };
+      }),
+    bulkUpdate: managerProcedure
+      .input(z.object({ permissions: z.array(z.object({ roleSlug: z.string(), module: z.string(), hasAccess: z.boolean() })) }))
+      .mutation(async ({ input }) => {
+        await db.bulkUpsertPermissions(input.permissions);
+        return { success: true };
+      }),
+  }),
+
+  // ============ ENHANCED LOOKUPS (bulk operations) ============
+  lookupsBulk: router({
+    createBulk: adminProcedure
+      .input(z.object({ items: z.array(z.object({ category: z.string(), value: z.string(), sortOrder: z.number() })) }))
+      .mutation(async ({ input }) => {
+        await db.createLookupItemsBulk(input.items);
+        return { success: true };
+      }),
+  }),
+
   // ============ SEED (admin only) ============
   seed: router({
     run: adminProcedure.mutation(async () => {
@@ -484,7 +519,12 @@ export const appRouter = router({
         }
       }
 
-      return { message: `Seeded successfully. Roles: ${Object.keys(roleIds).length}, machines: 27, lookup categories: 4.` };
+      // Seed default permissions
+      const allModules = ["checklist", "tasks", "reports", "orders", "recipes", "monitoring", "analytics", "dictionaries"];
+      const allRoleSlugs = Object.keys(roleIds);
+      await db.seedDefaultPermissions(allRoleSlugs, allModules);
+
+      return { message: `Seeded successfully. Roles: ${Object.keys(roleIds).length}, machines: 27, lookup categories: 4, permissions seeded.` };
     }),
   }),
 });

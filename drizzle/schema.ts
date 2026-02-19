@@ -258,3 +258,22 @@ export const recipeComponents = mysqlTable("recipe_components", {
 });
 
 export type RecipeComponent = typeof recipeComponents.$inferSelect;
+
+// ============================================================
+// ROLE PERMISSIONS MODULE
+// ============================================================
+
+/**
+ * Role permissions — controls which modules each production role can access
+ * module: "checklist", "tasks", "reports", "orders", "recipes", "monitoring", "analytics", "dictionaries"
+ */
+export const rolePermissions = mysqlTable("role_permissions", {
+  id: int("id").autoincrement().primaryKey(),
+  roleSlug: varchar("roleSlug", { length: 64 }).notNull(),
+  module: varchar("module", { length: 64 }).notNull(),
+  hasAccess: boolean("hasAccess").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type RolePermission = typeof rolePermissions.$inferSelect;

@@ -15,6 +15,8 @@ import Tasks from "./pages/Tasks";
 import Reports from "./pages/Reports";
 import Orders from "./pages/Orders";
 import Recipes from "./pages/Recipes";
+import Dictionaries from "./pages/Dictionaries";
+import Permissions from "./pages/Permissions";
 
 function Router() {
   return (
@@ -30,6 +32,8 @@ function Router() {
       <Route path={"/reports"} component={Reports} />
       <Route path={"/orders"} component={Orders} />
       <Route path={"/recipes"} component={Recipes} />
+      <Route path={"/dictionaries"} component={Dictionaries} />
+      <Route path={"/permissions"} component={Permissions} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

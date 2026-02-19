@@ -16,6 +16,7 @@ import {
   orders,
   materialRecipes,
   recipeComponents,
+  rolePermissions,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -533,4 +534,68 @@ export async function deleteRecipe(id: number) {
   if (!db) return;
   await db.delete(recipeComponents).where(eq(recipeComponents.recipeId, id));
   await db.delete(materialRecipes).where(eq(materialRecipes.id, id));
+}
+
+// ============ ROLE PERMISSIONS ============
+
+export async function getAllRolePermissions() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(rolePermissions).orderBy(asc(rolePermissions.roleSlug), asc(rolePermissions.module));
+}
+
+export async function getPermissionsForRole(roleSlug: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(rolePermissions).where(eq(rolePermissions.roleSlug, roleSlug)).orderBy(asc(rolePermissions.module));
+}
+
+export async function upsertRolePermission(roleSlug: string, module: string, hasAccess: boolean) {
+  const db = await getDb();
+  if (!db) return null;
+  // Check if exists
+  const existing = await db.select().from(rolePermissions)
+    .where(and(eq(rolePermissions.roleSlug, roleSlug), eq(rolePermissions.module, module))).limit(1);
+  if (existing.length > 0) {
+    await db.update(rolePermissions).set({ hasAccess }).where(eq(rolePermissions.id, existing[0].id));
+    return existing[0].id;
+  } else {
+    const result = await db.insert(rolePermissions).values({ roleSlug, module, hasAccess });
+    return result[0].insertId;
+  }
+}
+
+export async function bulkUpsertPermissions(permissions: Array<{ roleSlug: string; module: string; hasAccess: boolean }>) {
+  for (const p of permissions) {
+    await upsertRolePermission(p.roleSlug, p.module, p.hasAccess);
+  }
+}
+
+export async function seedDefaultPermissions(roleSlugs: string[], modules: string[]) {
+  const db = await getDb();
+  if (!db) return;
+  const existing = await getAllRolePermissions();
+  const existingKeys = new Set(existing.map(p => `${p.roleSlug}:${p.module}`));
+  
+  // Default: managers get all access, others get checklist + tasks
+  const managerRoles = ["production_manager", "production_director"];
+  const defaultAccessAll = ["checklist", "tasks", "reports", "orders", "recipes", "monitoring", "analytics", "dictionaries"];
+  const defaultAccessBasic = ["checklist", "tasks"];
+  
+  for (const roleSlug of roleSlugs) {
+    for (const module of modules) {
+      const key = `${roleSlug}:${module}`;
+      if (existingKeys.has(key)) continue;
+      const isManager = managerRoles.includes(roleSlug);
+      const hasAccess = isManager ? true : (defaultAccessBasic.includes(module));
+      await db.insert(rolePermissions).values({ roleSlug, module, hasAccess });
+    }
+  }
+}
+
+export async function createLookupItemsBulk(items: Array<{ category: string; value: string; sortOrder: number }>) {
+  const db = await getDb();
+  if (!db) return;
+  if (items.length === 0) return;
+  await db.insert(lookupItems).values(items);
 }
