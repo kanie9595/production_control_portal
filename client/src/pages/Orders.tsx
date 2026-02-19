@@ -81,6 +81,7 @@ export default function Orders() {
       toast.success("Статус обновлён");
       utils.orders.list.invalidate();
       utils.orders.forMachine.invalidate();
+      utils.machines.list.invalidate();
     },
     onError: (err) => toast.error(err.message),
   });

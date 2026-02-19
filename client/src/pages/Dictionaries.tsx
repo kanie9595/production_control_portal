@@ -17,6 +17,7 @@ import {
   Wrench,
   AlertTriangle,
   Zap,
+  Link2,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
@@ -29,11 +30,12 @@ type Category = {
   icon: React.ReactNode;
   color: string;
   description: string;
+  hasParentProduct?: boolean;
 };
 
 const CATEGORIES: Category[] = [
   { key: "machines", label: "Станки", icon: <Cpu className="w-5 h-5" />, color: "oklch(0.7 0.15 170)", description: "Список станков ТПА" },
-  { key: "molds", label: "Пресс-формы", icon: <BookOpen className="w-5 h-5" />, color: "oklch(0.65 0.18 200)", description: "Пресс-формы и продукция" },
+  { key: "molds", label: "Пресс-формы", icon: <BookOpen className="w-5 h-5" />, color: "oklch(0.65 0.18 200)", description: "Пресс-формы и привязка к продукции", hasParentProduct: true },
   { key: "colors", label: "Цвета", icon: <Palette className="w-5 h-5" />, color: "oklch(0.72 0.19 60)", description: "Цвета изделий" },
   { key: "downtime_reasons", label: "Причины простоя", icon: <AlertTriangle className="w-5 h-5" />, color: "oklch(0.6 0.22 25)", description: "Причины простоя оборудования" },
 ];
@@ -44,13 +46,15 @@ export default function Dictionaries() {
   const [activeCategory, setActiveCategory] = useState<string>("machines");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [editParentProduct, setEditParentProduct] = useState("");
   const [newValue, setNewValue] = useState("");
+  const [newParentProduct, setNewParentProduct] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
 
   const isAdmin = user?.role === "admin";
   const isManager = useMemo(
-    () => MANAGER_ROLES.includes(user?.productionRole ?? ""),
-    [user?.productionRole]
+    () => MANAGER_ROLES.includes((user as any)?.productionRole ?? ""),
+    [user]
   );
   const canEdit = isAdmin || isManager;
 
@@ -59,6 +63,7 @@ export default function Dictionaries() {
     onSuccess: () => {
       lookupsQuery.refetch();
       setNewValue("");
+      setNewParentProduct("");
       setShowAddForm(false);
       toast.success("Элемент добавлен");
     },
@@ -94,23 +99,41 @@ export default function Dictionaries() {
 
   const currentCategory = CATEGORIES.find((c) => c.key === activeCategory)!;
 
+  // Unique product names for parentProduct suggestions
+  const uniqueProducts = useMemo(() => {
+    if (!lookupsQuery.data) return [];
+    const products = new Set<string>();
+    for (const item of lookupsQuery.data) {
+      if (item.category === "molds" && item.parentProduct) {
+        products.add(item.parentProduct);
+      }
+    }
+    return Array.from(products).sort();
+  }, [lookupsQuery.data]);
+
   const handleAdd = () => {
     if (!newValue.trim()) return;
     createMutation.mutate({
       category: activeCategory,
       value: newValue.trim(),
+      parentProduct: currentCategory.hasParentProduct && newParentProduct.trim() ? newParentProduct.trim() : undefined,
       sortOrder: currentItems.length,
     });
   };
 
-  const handleStartEdit = (id: number, value: string) => {
+  const handleStartEdit = (id: number, value: string, parentProduct?: string | null) => {
     setEditingId(id);
     setEditValue(value);
+    setEditParentProduct(parentProduct ?? "");
   };
 
   const handleSaveEdit = (id: number) => {
     if (!editValue.trim()) return;
-    updateMutation.mutate({ id, value: editValue.trim() });
+    updateMutation.mutate({
+      id,
+      value: editValue.trim(),
+      parentProduct: currentCategory.hasParentProduct ? (editParentProduct.trim() || null) : undefined,
+    });
   };
 
   const handleDelete = (id: number) => {
@@ -248,22 +271,58 @@ export default function Dictionaries() {
 
           {/* Add form */}
           {showAddForm && canEdit && (
-            <div className="flex items-center gap-2 mb-4 p-3 rounded-lg border border-primary/30" style={{ background: "oklch(0.2 0.015 260)" }}>
-              <input
-                type="text"
-                value={newValue}
-                onChange={(e) => setNewValue(e.target.value)}
-                placeholder="Введите название..."
-                className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground"
-                onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
-                autoFocus
-              />
-              <Button size="sm" onClick={handleAdd} disabled={createMutation.isPending || !newValue.trim()}>
-                <Check className="w-4 h-4" />
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => { setShowAddForm(false); setNewValue(""); }}>
-                <X className="w-4 h-4" />
-              </Button>
+            <div className="mb-4 p-3 rounded-lg border border-primary/30 space-y-2" style={{ background: "oklch(0.2 0.015 260)" }}>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newValue}
+                  onChange={(e) => setNewValue(e.target.value)}
+                  placeholder={currentCategory.hasParentProduct ? "Название пресс-формы..." : "Введите название..."}
+                  className="flex-1 bg-transparent border border-border rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/50"
+                  onKeyDown={(e) => { if (e.key === "Enter" && !currentCategory.hasParentProduct) handleAdd(); }}
+                  autoFocus
+                />
+                {!currentCategory.hasParentProduct && (
+                  <>
+                    <Button size="sm" onClick={handleAdd} disabled={createMutation.isPending || !newValue.trim()}>
+                      <Check className="w-4 h-4" />
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setShowAddForm(false); setNewValue(""); }}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </>
+                )}
+              </div>
+              {currentCategory.hasParentProduct && (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground shrink-0">
+                    <Link2 className="w-3 h-3" /> Продукция:
+                  </div>
+                  <input
+                    type="text"
+                    value={newParentProduct}
+                    onChange={(e) => setNewParentProduct(e.target.value)}
+                    placeholder="Например: Стакан 500"
+                    list="product-suggestions"
+                    className="flex-1 bg-transparent border border-border rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/50"
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+                  />
+                  <datalist id="product-suggestions">
+                    {uniqueProducts.map((p) => <option key={p} value={p} />)}
+                  </datalist>
+                  <Button size="sm" onClick={handleAdd} disabled={createMutation.isPending || !newValue.trim()}>
+                    <Check className="w-4 h-4" />
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setShowAddForm(false); setNewValue(""); setNewParentProduct(""); }}>
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+              {currentCategory.hasParentProduct && (
+                <p className="text-[10px] text-muted-foreground pl-1">
+                  Укажите продукцию, к которой привязана пресс-форма. Несколько пресс-форм могут быть привязаны к одной продукции.
+                </p>
+              )}
             </div>
           )}
 
@@ -282,7 +341,7 @@ export default function Dictionaries() {
               {currentItems.map((item, idx) => (
                 <div
                   key={item.id}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                  className={`group flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                     !item.isActive ? "opacity-50" : ""
                   }`}
                   style={{ background: idx % 2 === 0 ? "oklch(0.2 0.012 260)" : "transparent" }}
@@ -290,30 +349,61 @@ export default function Dictionaries() {
                   <span className="text-xs text-muted-foreground font-mono w-8">{idx + 1}.</span>
 
                   {editingId === item.id ? (
-                    <>
-                      <input
-                        type="text"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        className="flex-1 bg-transparent border border-primary/30 rounded px-2 py-1 text-sm text-foreground outline-none"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleSaveEdit(item.id);
-                          if (e.key === "Escape") setEditingId(null);
-                        }}
-                        autoFocus
-                      />
-                      <Button size="sm" variant="ghost" onClick={() => handleSaveEdit(item.id)} disabled={updateMutation.isPending}>
-                        <Check className="w-4 h-4 text-green-500" />
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
-                        <X className="w-4 h-4 text-muted-foreground" />
-                      </Button>
-                    </>
+                    <div className="flex-1 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          className="flex-1 bg-transparent border border-primary/30 rounded px-2 py-1 text-sm text-foreground outline-none"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSaveEdit(item.id);
+                            if (e.key === "Escape") setEditingId(null);
+                          }}
+                          autoFocus
+                        />
+                        <Button size="sm" variant="ghost" onClick={() => handleSaveEdit(item.id)} disabled={updateMutation.isPending}>
+                          <Check className="w-4 h-4 text-green-500" />
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
+                          <X className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                      </div>
+                      {currentCategory.hasParentProduct && (
+                        <div className="flex items-center gap-2 pl-0.5">
+                          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                            <Link2 className="w-2.5 h-2.5" /> Продукция:
+                          </span>
+                          <input
+                            type="text"
+                            value={editParentProduct}
+                            onChange={(e) => setEditParentProduct(e.target.value)}
+                            placeholder="Например: Стакан 500"
+                            list="product-suggestions-edit"
+                            className="flex-1 bg-transparent border border-border rounded px-2 py-1 text-xs text-foreground outline-none"
+                          />
+                          <datalist id="product-suggestions-edit">
+                            {uniqueProducts.map((p) => <option key={p} value={p} />)}
+                          </datalist>
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <>
-                      <span className={`flex-1 text-sm ${item.isActive ? "text-foreground" : "text-muted-foreground line-through"}`}>
-                        {item.value}
-                      </span>
+                      <div className="flex-1 min-w-0">
+                        <span className={`text-sm ${item.isActive ? "text-foreground" : "text-muted-foreground line-through"}`}>
+                          {item.value}
+                        </span>
+                        {currentCategory.hasParentProduct && (item as any).parentProduct && (
+                          <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded"
+                            style={{ background: "oklch(0.65 0.18 200 / 0.12)", color: "oklch(0.65 0.18 200)" }}>
+                            <Link2 className="w-2.5 h-2.5" /> {(item as any).parentProduct}
+                          </span>
+                        )}
+                        {currentCategory.hasParentProduct && !(item as any).parentProduct && (
+                          <span className="ml-2 text-[10px] text-yellow-500/70 italic">без привязки</span>
+                        )}
+                      </div>
                       {!item.isActive && (
                         <span className="text-[10px] text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded">
                           Неактивен
@@ -337,7 +427,7 @@ export default function Dictionaries() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => handleStartEdit(item.id, item.value)}
+                            onClick={() => handleStartEdit(item.id, item.value, (item as any).parentProduct)}
                             className="text-muted-foreground hover:text-primary h-7 w-7 p-0"
                           >
                             <Edit2 className="w-3.5 h-3.5" />

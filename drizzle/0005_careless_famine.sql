@@ -1,0 +1,1 @@
+ALTER TABLE `lookup_items` ADD `parentProduct` varchar(256);

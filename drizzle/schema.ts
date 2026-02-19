@@ -131,6 +131,8 @@ export const lookupItems = mysqlTable("lookup_items", {
   id: int("id").autoincrement().primaryKey(),
   category: varchar("category", { length: 64 }).notNull(),
   value: varchar("value", { length: 256 }).notNull(),
+  /** For molds category: links mold to its product name */
+  parentProduct: varchar("parentProduct", { length: 256 }),
   sortOrder: int("sortOrder").default(0).notNull(),
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

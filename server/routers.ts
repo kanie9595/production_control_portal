@@ -39,9 +39,12 @@ export const appRouter = router({
   // ============ PRODUCTION ROLES ============
   roles: router({
     list: publicProcedure.query(async () => db.getAllProductionRoles()),
-    create: adminProcedure
+    create: managerProcedure
       .input(z.object({ slug: z.string(), name: z.string(), description: z.string().optional(), sortOrder: z.number().optional() }))
       .mutation(async ({ input }) => ({ id: await db.createProductionRole(input) })),
+    update: managerProcedure
+      .input(z.object({ id: z.number(), name: z.string().optional(), description: z.string().nullable().optional(), sortOrder: z.number().optional() }))
+      .mutation(async ({ input }) => { const { id, ...data } = input; await db.updateProductionRole(id, data); return { success: true }; }),
   }),
 
   // ============ USERS (admin only) ============
@@ -211,11 +214,14 @@ export const appRouter = router({
       .input(z.object({ category: z.string() }))
       .query(async ({ input }) => db.getLookupsByCategory(input.category)),
     all: protectedProcedure.query(async () => db.getAllLookups()),
-    create: adminProcedure
-      .input(z.object({ category: z.string(), value: z.string(), sortOrder: z.number().optional() }))
+    moldsForProduct: protectedProcedure
+      .input(z.object({ product: z.string() }))
+      .query(async ({ input }) => db.getMoldsForProduct(input.product)),
+    create: managerProcedure
+      .input(z.object({ category: z.string(), value: z.string(), parentProduct: z.string().optional(), sortOrder: z.number().optional() }))
       .mutation(async ({ input }) => ({ id: await db.createLookupItem(input) })),
-    update: adminProcedure
-      .input(z.object({ id: z.number(), value: z.string().optional(), sortOrder: z.number().optional(), isActive: z.boolean().optional() }))
+    update: managerProcedure
+      .input(z.object({ id: z.number(), value: z.string().optional(), parentProduct: z.string().nullable().optional(), sortOrder: z.number().optional(), isActive: z.boolean().optional() }))
       .mutation(async ({ input }) => { const { id, ...data } = input; await db.updateLookupItem(id, data); return { success: true }; }),
     delete: adminProcedure
       .input(z.object({ id: z.number() }))
@@ -231,6 +237,12 @@ export const appRouter = router({
       if (isAdmin || isManager) return allReports;
       return allReports.filter(r => r.userId === ctx.user.id);
     }),
+    delete: managerProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteShiftReport(input.id);
+        return { success: true };
+      }),
     get: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
@@ -318,7 +330,35 @@ export const appRouter = router({
       }),
     updateStatus: protectedProcedure
       .input(z.object({ orderId: z.number(), status: z.enum(["pending", "in_progress", "completed", "cancelled"]) }))
-      .mutation(async ({ input }) => { await db.updateOrderStatus(input.orderId, input.status); return { success: true }; }),
+      .mutation(async ({ ctx, input }) => {
+        await db.updateOrderStatus(input.orderId, input.status);
+        // Auto-update machine status based on order status
+        const order = await db.getOrderById(input.orderId);
+        if (order) {
+          if (input.status === "in_progress") {
+            await db.updateMachineStatus(order.machineId, "running");
+          } else if (input.status === "completed" || input.status === "cancelled") {
+            // Check if machine has other active orders
+            const otherActive = (await db.getOrdersForMachine(order.machineId))
+              .filter(o => o.id !== input.orderId && o.status === "in_progress");
+            if (otherActive.length === 0) {
+              await db.updateMachineStatus(order.machineId, "idle");
+            }
+          }
+          // Notify production manager when order is completed
+          if (input.status === "completed") {
+            const allMachines = await db.getAllMachines();
+            const machine = allMachines.find(m => m.id === order.machineId);
+            try {
+              await notifyOwner({
+                title: `Заказ выполнен: ${order.product}`,
+                content: `Станок: ${machine?.number ?? "?"} (${machine?.name ?? "?"}). Продукция: ${order.product}. Количество: ${order.quantity} кор. Выполнено: ${order.completedQty} кор. Завершил: ${ctx.user.name ?? "Сотрудник"}.`,
+              });
+            } catch (e) { console.warn("[Orders] Failed to notify completion:", e); }
+          }
+        }
+        return { success: true };
+      }),
     update: managerProcedure
       .input(z.object({
         orderId: z.number(), product: z.string().optional(), color: z.string().optional(), quantity: z.number().optional(),

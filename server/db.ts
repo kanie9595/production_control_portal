@@ -95,6 +95,12 @@ export async function createProductionRole(data: { slug: string; name: string; d
   return result[0].insertId;
 }
 
+export async function updateProductionRole(id: number, data: { name?: string; description?: string | null; sortOrder?: number }) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(productionRoles).set(data).where(eq(productionRoles.id, id));
+}
+
 // ============ CHECKLIST TEMPLATES ============
 
 export async function getTemplatesForRole(roleId: number) {
@@ -318,17 +324,25 @@ export async function getAllLookups() {
   return db.select().from(lookupItems).orderBy(asc(lookupItems.category), asc(lookupItems.sortOrder));
 }
 
-export async function createLookupItem(data: { category: string; value: string; sortOrder?: number }) {
+export async function createLookupItem(data: { category: string; value: string; parentProduct?: string; sortOrder?: number }) {
   const db = await getDb();
   if (!db) return null;
-  const result = await db.insert(lookupItems).values({ category: data.category, value: data.value, sortOrder: data.sortOrder ?? 0 });
+  const result = await db.insert(lookupItems).values({ category: data.category, value: data.value, parentProduct: data.parentProduct ?? null, sortOrder: data.sortOrder ?? 0 });
   return result[0].insertId;
 }
 
-export async function updateLookupItem(id: number, data: { value?: string; sortOrder?: number; isActive?: boolean }) {
+export async function updateLookupItem(id: number, data: { value?: string; parentProduct?: string | null; sortOrder?: number; isActive?: boolean }) {
   const db = await getDb();
   if (!db) return;
   await db.update(lookupItems).set(data).where(eq(lookupItems.id, id));
+}
+
+export async function getMoldsForProduct(productName: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(lookupItems)
+    .where(and(eq(lookupItems.category, "molds"), eq(lookupItems.parentProduct, productName), eq(lookupItems.isActive, true)))
+    .orderBy(asc(lookupItems.sortOrder));
 }
 
 export async function deleteLookupItem(id: number) {
@@ -395,6 +409,21 @@ export async function deleteShiftReportRow(id: number) {
   const db = await getDb();
   if (!db) return;
   await db.delete(shiftReportRows).where(eq(shiftReportRows.id, id));
+}
+
+export async function deleteShiftReport(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  // First reverse all order deductions for rows in this report
+  const rows = await getShiftReportRows(id);
+  for (const row of rows) {
+    if (row.orderId && row.actualQty > 0) {
+      await decrementOrderCompletedQty(row.orderId, row.actualQty);
+    }
+  }
+  // Delete all rows then the report
+  await db.delete(shiftReportRows).where(eq(shiftReportRows.reportId, id));
+  await db.delete(shiftReports).where(eq(shiftReports.id, id));
 }
 
 export async function getReportAnalytics(moldProduct: string) {

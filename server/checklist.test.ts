@@ -158,6 +158,15 @@ vi.mock("./db", () => {
     createOrder: vi.fn().mockResolvedValue(10),
     updateOrder: vi.fn().mockResolvedValue(undefined),
     updateOrderStatus: vi.fn().mockResolvedValue(undefined),
+    getOrderById: vi.fn().mockImplementation((id: number) =>
+      Promise.resolve(orders.find((o) => o.id === id) ?? null)
+    ),
+    incrementOrderCompletedQty: vi.fn().mockResolvedValue(undefined),
+    decrementOrderCompletedQty: vi.fn().mockResolvedValue(undefined),
+    getShiftReportRowById: vi.fn().mockResolvedValue(shiftReportRows[0]),
+    deleteShiftReport: vi.fn().mockResolvedValue(undefined),
+    getMoldsForProduct: vi.fn().mockResolvedValue([]),
+    updateProductionRole: vi.fn().mockResolvedValue(undefined),
     // Recipes
     getAllRecipes: vi.fn().mockResolvedValue(recipes),
     getRecipeById: vi.fn().mockResolvedValue(recipes[0]),
