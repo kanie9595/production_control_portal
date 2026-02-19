@@ -53,17 +53,34 @@ export default function Orders() {
   const lookupsQuery = trpc.lookups.all.useQuery(undefined, { enabled: isAuthenticated });
 
   const lookupsByCategory = useMemo(() => {
-    const map = new Map<string, Array<{ id: number; value: string }>>();
+    const map = new Map<string, Array<{ id: number; value: string; parentProduct?: string | null }>>();
     for (const l of lookupsQuery.data ?? []) {
       if (!l.isActive) continue;
       const arr = map.get(l.category) ?? [];
-      arr.push(l);
+      arr.push(l as any);
       map.set(l.category, arr);
     }
     return map;
   }, [lookupsQuery.data]);
 
   const getOptions = (cat: string) => lookupsByCategory.get(cat) ?? [];
+
+  // Extract unique product names from molds' parentProduct field
+  const uniqueProducts = useMemo(() => {
+    const molds = getOptions("molds");
+    const productSet = new Set<string>();
+    for (const m of molds) {
+      if (m.parentProduct) productSet.add(m.parentProduct);
+    }
+    return Array.from(productSet).sort();
+  }, [lookupsByCategory]);
+
+  // Filter molds by selected product
+  const filteredMolds = useMemo(() => {
+    const molds = getOptions("molds");
+    if (!product) return molds;
+    return molds.filter((m) => m.parentProduct === product);
+  }, [lookupsByCategory, product]);
 
   const createOrderMutation = trpc.orders.create.useMutation({
     onSuccess: () => {
@@ -219,11 +236,20 @@ export default function Orders() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   <div>
                     <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Продукция *</label>
-                    <select value={product} onChange={(e) => setProduct(e.target.value)}
+                    <select value={product} onChange={(e) => {
+                      const newProduct = e.target.value;
+                      setProduct(newProduct);
+                      setMoldName("");
+                      // Auto-select mold if only one available for this product
+                      if (newProduct) {
+                        const molds = getOptions("molds").filter((m) => m.parentProduct === newProduct);
+                        if (molds.length === 1) setMoldName(molds[0].value);
+                      }
+                    }}
                       className="w-full rounded-lg border border-border px-3 py-2 text-sm text-foreground"
                       style={{ background: "oklch(0.22 0.012 260)" }}>
                       <option value="">Выберите продукцию...</option>
-                      {getOptions("molds").map((o) => <option key={o.id} value={o.value}>{o.value}</option>)}
+                      {uniqueProducts.map((p) => <option key={p} value={p}>{p}</option>)}
                     </select>
                   </div>
                   <div>
@@ -247,8 +273,14 @@ export default function Orders() {
                       className="w-full rounded-lg border border-border px-3 py-2 text-sm text-foreground"
                       style={{ background: "oklch(0.22 0.012 260)" }}>
                       <option value="">Выберите пресс-форму...</option>
-                      {getOptions("molds").map((o) => <option key={o.id} value={o.value}>{o.value}</option>)}
+                      {filteredMolds.map((o) => <option key={o.id} value={o.value}>{o.value}</option>)}
                     </select>
+                    {product && filteredMolds.length === 0 && (
+                      <p className="text-[9px] mt-1" style={{ color: "oklch(0.65 0.25 25)" }}>Нет пресс-форм для этой продукции</p>
+                    )}
+                    {product && filteredMolds.length === 1 && !moldName && (
+                      <p className="text-[9px] mt-1 text-muted-foreground">Доступна 1 пресс-форма</p>
+                    )}
                   </div>
                   <div>
                     <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Примечания</label>
