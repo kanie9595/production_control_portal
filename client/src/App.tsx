@@ -10,6 +10,11 @@ import ManagerDashboard from "./pages/ManagerDashboard";
 import TemplateEditor from "./pages/TemplateEditor";
 import UserManagement from "./pages/UserManagement";
 import HowToRegister from "./pages/HowToRegister";
+import Analytics from "./pages/Analytics";
+import Tasks from "./pages/Tasks";
+import Reports from "./pages/Reports";
+import Orders from "./pages/Orders";
+import Recipes from "./pages/Recipes";
 
 function Router() {
   return (
@@ -20,6 +25,11 @@ function Router() {
       <Route path={"/templates"} component={TemplateEditor} />
       <Route path={"/users"} component={UserManagement} />
       <Route path={"/how-to-register"} component={HowToRegister} />
+      <Route path={"/analytics"} component={Analytics} />
+      <Route path={"/tasks"} component={Tasks} />
+      <Route path={"/reports"} component={Reports} />
+      <Route path={"/orders"} component={Orders} />
+      <Route path={"/recipes"} component={Recipes} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

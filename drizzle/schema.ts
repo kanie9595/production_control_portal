@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, decimal } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -10,7 +10,6 @@ export const users = mysqlTable("users", {
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
-  /** Production role assigned by admin (e.g. "packer", "adjuster", "mechanic", "shift_supervisor", "production_manager") */
   productionRole: varchar("productionRole", { length: 64 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -21,7 +20,7 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 /**
- * Production roles (e.g. Упаковщик, Наладчик, Механик, Начальник смены, Начальник производства)
+ * Production roles
  */
 export const productionRoles = mysqlTable("production_roles", {
   id: int("id").autoincrement().primaryKey(),
@@ -36,7 +35,7 @@ export const productionRoles = mysqlTable("production_roles", {
 export type ProductionRole = typeof productionRoles.$inferSelect;
 
 /**
- * Checklist templates — one per role per period type (daily/weekly/monthly)
+ * Checklist templates
  */
 export const checklistTemplates = mysqlTable("checklist_templates", {
   id: int("id").autoincrement().primaryKey(),
@@ -50,7 +49,7 @@ export const checklistTemplates = mysqlTable("checklist_templates", {
 export type ChecklistTemplate = typeof checklistTemplates.$inferSelect;
 
 /**
- * Template items — individual checklist items within a template
+ * Template items
  */
 export const templateItems = mysqlTable("template_items", {
   id: int("id").autoincrement().primaryKey(),
@@ -66,13 +65,12 @@ export const templateItems = mysqlTable("template_items", {
 export type TemplateItem = typeof templateItems.$inferSelect;
 
 /**
- * Checklist instances — a filled-in checklist for a specific user and date period
+ * Checklist instances
  */
 export const checklistInstances = mysqlTable("checklist_instances", {
   id: int("id").autoincrement().primaryKey(),
   templateId: int("templateId").notNull(),
   userId: int("userId").notNull(),
-  /** Date key like "daily-2026-02-18", "weekly-2026-W08", "monthly-2026-02" */
   dateKey: varchar("dateKey", { length: 64 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -81,7 +79,7 @@ export const checklistInstances = mysqlTable("checklist_instances", {
 export type ChecklistInstance = typeof checklistInstances.$inferSelect;
 
 /**
- * Instance items — individual item completions within an instance
+ * Instance items
  */
 export const instanceItems = mysqlTable("instance_items", {
   id: int("id").autoincrement().primaryKey(),
@@ -95,3 +93,168 @@ export const instanceItems = mysqlTable("instance_items", {
 });
 
 export type InstanceItem = typeof instanceItems.$inferSelect;
+
+// ============================================================
+// TASKS MODULE
+// ============================================================
+
+/**
+ * Tasks — assigned to specific employees by managers
+ */
+export const tasks = mysqlTable("tasks", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 256 }).notNull(),
+  description: text("description"),
+  /** User ID of the assignee */
+  assigneeId: int("assigneeId").notNull(),
+  /** User ID of the creator */
+  creatorId: int("creatorId").notNull(),
+  status: mysqlEnum("status", ["pending", "in_progress", "completed", "cancelled"]).default("pending").notNull(),
+  priority: mysqlEnum("priority", ["low", "medium", "high", "urgent"]).default("medium").notNull(),
+  deadline: timestamp("deadline"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Task = typeof tasks.$inferSelect;
+
+// ============================================================
+// LOOKUP LISTS MODULE (for report dropdowns)
+// ============================================================
+
+/**
+ * Lookup lists — configurable dropdown options for reports
+ * category: "machines", "molds", "colors", "downtime_reasons"
+ */
+export const lookupItems = mysqlTable("lookup_items", {
+  id: int("id").autoincrement().primaryKey(),
+  category: varchar("category", { length: 64 }).notNull(),
+  value: varchar("value", { length: 256 }).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type LookupItem = typeof lookupItems.$inferSelect;
+
+// ============================================================
+// SHIFT REPORTS MODULE
+// ============================================================
+
+/**
+ * Shift reports — one per user per shift date
+ */
+export const shiftReports = mysqlTable("shift_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  shiftDate: varchar("shiftDate", { length: 32 }).notNull(),
+  shiftNumber: int("shiftNumber").default(1).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ShiftReport = typeof shiftReports.$inferSelect;
+
+/**
+ * Shift report rows — individual production entries within a shift report
+ */
+export const shiftReportRows = mysqlTable("shift_report_rows", {
+  id: int("id").autoincrement().primaryKey(),
+  reportId: int("reportId").notNull(),
+  machineNumber: varchar("machineNumber", { length: 64 }).notNull(),
+  moldProduct: varchar("moldProduct", { length: 256 }).notNull(),
+  productColor: varchar("productColor", { length: 128 }).notNull(),
+  planQty: int("planQty").default(0).notNull(),
+  actualQty: int("actualQty").default(0).notNull(),
+  standardCycle: decimal("standardCycle", { precision: 8, scale: 2 }).default("0").notNull(),
+  actualCycle: decimal("actualCycle", { precision: 8, scale: 2 }).default("0").notNull(),
+  downtimeMin: int("downtimeMin").default(0).notNull(),
+  downtimeReason: varchar("downtimeReason", { length: 256 }),
+  defectKg: decimal("defectKg", { precision: 8, scale: 2 }).default("0").notNull(),
+  changeover: int("changeover").default(0).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ShiftReportRow = typeof shiftReportRows.$inferSelect;
+
+// ============================================================
+// ORDERS MODULE
+// ============================================================
+
+/**
+ * Machines — 27 production machines
+ */
+export const machines = mysqlTable("machines", {
+  id: int("id").autoincrement().primaryKey(),
+  number: varchar("number", { length: 32 }).notNull().unique(),
+  name: varchar("name", { length: 128 }).notNull(),
+  status: mysqlEnum("status", ["running", "idle", "maintenance", "changeover"]).default("idle").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Machine = typeof machines.$inferSelect;
+
+/**
+ * Orders — production orders assigned to machines
+ */
+export const orders = mysqlTable("orders", {
+  id: int("id").autoincrement().primaryKey(),
+  machineId: int("machineId").notNull(),
+  product: varchar("product", { length: 256 }).notNull(),
+  color: varchar("color", { length: 128 }),
+  quantity: int("quantity").notNull(),
+  completedQty: int("completedQty").default(0).notNull(),
+  status: mysqlEnum("status", ["pending", "in_progress", "completed", "cancelled"]).default("pending").notNull(),
+  moldName: varchar("moldName", { length: 256 }),
+  rawMaterial: varchar("rawMaterial", { length: 256 }),
+  notes: text("notes"),
+  createdById: int("createdById").notNull(),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Order = typeof orders.$inferSelect;
+
+// ============================================================
+// RAW MATERIALS / RECIPES MODULE
+// ============================================================
+
+/**
+ * Material recipes — raw material formulas for orders
+ */
+export const materialRecipes = mysqlTable("material_recipes", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 256 }).notNull(),
+  product: varchar("product", { length: 256 }).notNull(),
+  description: text("description"),
+  createdById: int("createdById").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type MaterialRecipe = typeof materialRecipes.$inferSelect;
+
+/**
+ * Recipe components — individual ingredients in a recipe
+ */
+export const recipeComponents = mysqlTable("recipe_components", {
+  id: int("id").autoincrement().primaryKey(),
+  recipeId: int("recipeId").notNull(),
+  materialName: varchar("materialName", { length: 256 }).notNull(),
+  percentage: decimal("percentage", { precision: 6, scale: 2 }).default("0").notNull(),
+  weightKg: decimal("weightKg", { precision: 10, scale: 3 }),
+  notes: text("notes"),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type RecipeComponent = typeof recipeComponents.$inferSelect;

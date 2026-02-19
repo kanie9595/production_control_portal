@@ -12,6 +12,11 @@ import {
   Loader2,
   LogOut,
   HelpCircle,
+  BarChart3,
+  ListTodo,
+  FileText,
+  Cpu,
+  FlaskConical,
 } from "lucide-react";
 import { useEffect, useMemo } from "react";
 
@@ -22,7 +27,6 @@ export default function Home() {
   const [, setLocation] = useLocation();
   const seedMutation = trpc.seed.run.useMutation();
 
-  // Auto-seed on first admin login
   useEffect(() => {
     if (user?.role === "admin" && isAuthenticated) {
       seedMutation.mutate();
@@ -58,18 +62,11 @@ export default function Home() {
             </div>
             <h1 className="font-mono text-2xl font-bold text-foreground mb-2">MPC</h1>
             <p className="text-sm text-muted-foreground mb-1">Manus Production Control</p>
-            <p className="text-xs text-muted-foreground mb-8">Система управления производственными чек-листами</p>
-            <Button
-              onClick={() => { window.location.href = getLoginUrl(); }}
-              size="lg"
-              className="w-full font-mono"
-            >
+            <p className="text-xs text-muted-foreground mb-8">Система управления производством</p>
+            <Button onClick={() => { window.location.href = getLoginUrl(); }} size="lg" className="w-full font-mono">
               Войти в систему
             </Button>
-            <button
-              onClick={() => setLocation("/how-to-register")}
-              className="mt-4 text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5 mx-auto"
-            >
+            <button onClick={() => setLocation("/how-to-register")} className="mt-4 text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5 mx-auto">
               <HelpCircle className="w-3.5 h-3.5" />
               Как зарегистрироваться?
             </button>
@@ -83,23 +80,32 @@ export default function Home() {
     const role = user?.productionRole;
     if (!role) return "Сотрудник";
     const roleNames: Record<string, string> = {
-      packer: "Упаковщик",
-      adjuster: "Наладчик ТПА",
-      mechanic: "Механик",
-      shift_supervisor: "Начальник смены",
-      production_manager: "Начальник производства",
-      production_director: "Директор производства",
-      shift_assistant: "Помощница начальника смены",
-      packer_foreman: "Бригадир упаковщиков",
-      senior_mechanic: "Старший механик",
+      packer: "Упаковщик", adjuster: "Наладчик ТПА", mechanic: "Механик",
+      shift_supervisor: "Начальник смены", production_manager: "Начальник производства",
+      production_director: "Директор производства", shift_assistant: "Помощница начальника смены",
+      packer_foreman: "Бригадир упаковщиков", senior_mechanic: "Старший механик",
       senior_adjuster: "Старший наладчик ТПА",
     };
     return roleNames[role] ?? role;
   })();
 
+  type NavCard = { path: string; icon: React.ReactNode; iconBg: string; title: string; desc: string; visible: boolean };
+
+  const navCards: NavCard[] = [
+    { path: "/checklist", icon: <ClipboardList className="w-6 h-6 text-primary" />, iconBg: "oklch(0.78 0.16 75 / 0.12)", title: "Мой чек-лист", desc: "Заполнить чек-лист за текущий период", visible: true },
+    { path: "/tasks", icon: <ListTodo className="w-6 h-6" style={{ color: "oklch(0.72 0.19 60)" }} />, iconBg: "oklch(0.72 0.19 60 / 0.12)", title: "Задачи", desc: "Просмотр и выполнение назначенных задач", visible: true },
+    { path: "/reports", icon: <FileText className="w-6 h-6" style={{ color: "oklch(0.65 0.18 200)" }} />, iconBg: "oklch(0.65 0.18 200 / 0.12)", title: "Отчёты", desc: "Сменные отчёты по производству", visible: true },
+    { path: "/orders", icon: <Cpu className="w-6 h-6" style={{ color: "oklch(0.7 0.15 170)" }} />, iconBg: "oklch(0.7 0.15 170 / 0.12)", title: "Заказы", desc: "Заказы на 27 станках производства", visible: true },
+    { path: "/recipes", icon: <FlaskConical className="w-6 h-6" style={{ color: "oklch(0.65 0.2 310)" }} />, iconBg: "oklch(0.65 0.2 310 / 0.12)", title: "Сырьё", desc: "Рецепты сырья для заказов", visible: true },
+    { path: "/dashboard", icon: <LayoutDashboard className="w-6 h-6" style={{ color: "oklch(0.7 0.18 145)" }} />, iconBg: "oklch(0.7 0.18 145 / 0.12)", title: "Мониторинг", desc: "Просмотр чек-листов сотрудников", visible: canViewDashboard },
+    { path: "/analytics", icon: <BarChart3 className="w-6 h-6" style={{ color: "oklch(0.6 0.2 280)" }} />, iconBg: "oklch(0.6 0.2 280 / 0.12)", title: "Аналитика", desc: "История и статистика чек-листов", visible: canViewDashboard },
+    { path: "/templates", icon: <Settings className="w-6 h-6" style={{ color: "oklch(0.65 0.15 250)" }} />, iconBg: "oklch(0.65 0.15 250 / 0.12)", title: "Шаблоны чек-листов", desc: "Редактировать пункты чек-листов", visible: isAdmin },
+    { path: "/users", icon: <Users className="w-6 h-6" style={{ color: "oklch(0.6 0.22 25)" }} />, iconBg: "oklch(0.6 0.22 25 / 0.12)", title: "Сотрудники", desc: "Управление ролями сотрудников", visible: isAdmin },
+    { path: "/how-to-register", icon: <HelpCircle className="w-6 h-6" style={{ color: "oklch(0.5 0.1 280)" }} />, iconBg: "oklch(0.5 0.1 280 / 0.12)", title: "Как зарегистрироваться", desc: "Инструкция для новых сотрудников", visible: true },
+  ];
+
   return (
     <div className="min-h-screen" style={{ background: "oklch(0.16 0.01 260)" }}>
-      {/* Header */}
       <header className="border-b border-border" style={{ background: "oklch(0.14 0.01 260)" }}>
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -125,7 +131,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main */}
       <main className="max-w-5xl mx-auto px-4 py-10">
         <div className="mb-8">
           <h1 className="font-mono text-2xl font-bold text-foreground mb-2">
@@ -135,81 +140,26 @@ export default function Home() {
             {isAdmin
               ? "Вы вошли как администратор. Выберите раздел для работы."
               : canViewDashboard
-                ? "Вы можете заполнить свой чек-лист или просмотреть чек-листы сотрудников."
-                : "Выберите ваш чек-лист для заполнения."}
+                ? "Управляйте производством: чек-листы, задачи, отчёты, заказы."
+                : "Выберите раздел для работы."}
           </p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Employee checklist — always visible */}
-          <button
-            onClick={() => setLocation("/checklist")}
-            className="rounded-xl border border-border p-6 text-left hover:border-primary/40 transition-all duration-300 group"
-            style={{ background: "oklch(0.18 0.012 260)" }}
-          >
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform" style={{ background: "oklch(0.78 0.16 75 / 0.12)" }}>
-              <ClipboardList className="w-6 h-6 text-primary" />
-            </div>
-            <h3 className="font-mono text-sm font-semibold text-foreground mb-1">Мой чек-лист</h3>
-            <p className="text-xs text-muted-foreground">Заполнить чек-лист за текущий период</p>
-          </button>
-
-          {/* Dashboard — visible to admin, production_manager, production_director */}
-          {canViewDashboard && (
+          {navCards.filter(c => c.visible).map((card) => (
             <button
-              onClick={() => setLocation("/dashboard")}
+              key={card.path}
+              onClick={() => setLocation(card.path)}
               className="rounded-xl border border-border p-6 text-left hover:border-primary/40 transition-all duration-300 group"
               style={{ background: "oklch(0.18 0.012 260)" }}
             >
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform" style={{ background: "oklch(0.7 0.18 145 / 0.12)" }}>
-                <LayoutDashboard className="w-6 h-6" style={{ color: "oklch(0.7 0.18 145)" }} />
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform" style={{ background: card.iconBg }}>
+                {card.icon}
               </div>
-              <h3 className="font-mono text-sm font-semibold text-foreground mb-1">Мониторинг</h3>
-              <p className="text-xs text-muted-foreground">Просмотр чек-листов сотрудников в реальном времени</p>
+              <h3 className="font-mono text-sm font-semibold text-foreground mb-1">{card.title}</h3>
+              <p className="text-xs text-muted-foreground">{card.desc}</p>
             </button>
-          )}
-
-          {/* Admin-only sections */}
-          {isAdmin && (
-            <>
-              <button
-                onClick={() => setLocation("/templates")}
-                className="rounded-xl border border-border p-6 text-left hover:border-primary/40 transition-all duration-300 group"
-                style={{ background: "oklch(0.18 0.012 260)" }}
-              >
-                <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform" style={{ background: "oklch(0.65 0.15 250 / 0.12)" }}>
-                  <Settings className="w-6 h-6" style={{ color: "oklch(0.65 0.15 250)" }} />
-                </div>
-                <h3 className="font-mono text-sm font-semibold text-foreground mb-1">Шаблоны чек-листов</h3>
-                <p className="text-xs text-muted-foreground">Редактировать пункты чек-листов для всех должностей</p>
-              </button>
-
-              <button
-                onClick={() => setLocation("/users")}
-                className="rounded-xl border border-border p-6 text-left hover:border-primary/40 transition-all duration-300 group"
-                style={{ background: "oklch(0.18 0.012 260)" }}
-              >
-                <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform" style={{ background: "oklch(0.6 0.22 25 / 0.12)" }}>
-                  <Users className="w-6 h-6" style={{ color: "oklch(0.6 0.22 25)" }} />
-                </div>
-                <h3 className="font-mono text-sm font-semibold text-foreground mb-1">Сотрудники</h3>
-                <p className="text-xs text-muted-foreground">Управление ролями и назначение чек-листов</p>
-              </button>
-            </>
-          )}
-
-          {/* How to register — always visible */}
-          <button
-            onClick={() => setLocation("/how-to-register")}
-            className="rounded-xl border border-border p-6 text-left hover:border-primary/40 transition-all duration-300 group"
-            style={{ background: "oklch(0.18 0.012 260)" }}
-          >
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform" style={{ background: "oklch(0.5 0.1 280 / 0.12)" }}>
-              <HelpCircle className="w-6 h-6" style={{ color: "oklch(0.5 0.1 280)" }} />
-            </div>
-            <h3 className="font-mono text-sm font-semibold text-foreground mb-1">Как зарегистрироваться</h3>
-            <p className="text-xs text-muted-foreground">Инструкция для новых сотрудников</p>
-          </button>
+          ))}
         </div>
       </main>
     </div>
