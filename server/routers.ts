@@ -218,11 +218,11 @@ export const appRouter = router({
       .input(z.object({ product: z.string() }))
       .query(async ({ input }) => db.getMoldsForProduct(input.product)),
     create: managerProcedure
-      .input(z.object({ category: z.string(), value: z.string(), parentProduct: z.string().optional(), sortOrder: z.number().optional() }))
+      .input(z.object({ category: z.string(), value: z.string(), parentProduct: z.string().optional(), standardWeight: z.string().optional(), sortOrder: z.number().optional() }))
       .mutation(async ({ input }) => ({ id: await db.createLookupItem(input) })),
     update: managerProcedure
-      .input(z.object({ id: z.number(), value: z.string().optional(), parentProduct: z.string().nullable().optional(), sortOrder: z.number().optional(), isActive: z.boolean().optional() }))
-      .mutation(async ({ input }) => { const { id, ...data } = input; await db.updateLookupItem(id, data); return { success: true }; }),
+      .input(z.object({ id: z.number(), value: z.string().optional(), parentProduct: z.string().nullable().optional(), standardWeight: z.string().nullable().optional(), sortOrder: z.number().optional(), isActive: z.boolean().optional() }))
+      .mutation(async ({ input }) => { const { id, ...data } = input; await db.updateLookupItemFull(id, data); return { success: true }; }),
     delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => { await db.deleteLookupItem(input.id); return { success: true }; }),
@@ -260,13 +260,22 @@ export const appRouter = router({
       .input(z.object({
         reportId: z.number(), orderId: z.number().optional(), machineNumber: z.string(), moldProduct: z.string(), productColor: z.string(),
         planQty: z.number(), actualQty: z.number(), standardCycle: z.string(), actualCycle: z.string(),
+        standardWeight: z.string().optional(), avgWeight: z.string().optional(),
         downtimeMin: z.number(), downtimeReason: z.string().optional(), defectKg: z.string(), changeover: z.number(), sortOrder: z.number().optional(),
+        customFields: z.array(z.object({ fieldId: z.number(), value: z.string().nullable() })).optional(),
       }))
       .mutation(async ({ input }) => {
-        const id = await db.createShiftReportRow(input);
+        const { customFields, ...rowData } = input;
+        const id = await db.createShiftReportRow(rowData);
         // Auto-deduct: increment order completedQty when actualQty is reported
         if (input.orderId && input.actualQty > 0) {
           await db.incrementOrderCompletedQty(input.orderId, input.actualQty);
+        }
+        // Save custom field values
+        if (customFields && id) {
+          for (const cf of customFields) {
+            await db.upsertCustomFieldValue(id, cf.fieldId, cf.value);
+          }
         }
         return { id };
       }),
@@ -291,6 +300,9 @@ export const appRouter = router({
     analytics: protectedProcedure
       .input(z.object({ moldProduct: z.string() }))
       .query(async ({ input }) => db.getReportAnalytics(input.moldProduct)),
+    customFieldValues: protectedProcedure
+      .input(z.object({ reportRowId: z.number() }))
+      .query(async ({ input }) => db.getCustomFieldValuesForRow(input.reportRowId)),
   }),
 
   // ============ MACHINES ============
@@ -317,6 +329,26 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const id = await db.createOrder({ ...input, createdById: ctx.user.id });
+        // Auto-create material request from recipe if product has one
+        if (id) {
+          const recipes = await db.getRecipesForProduct(input.product);
+          if (recipes.length > 0) {
+            const recipe = recipes[0]; // Use first matching recipe
+            const components = await db.getRecipeComponents(recipe.id);
+            const requestId = await db.createMaterialRequest({
+              orderId: id, recipeId: recipe.id, product: input.product,
+              notes: `Автозаявка из рецепта: ${recipe.name}`,
+            });
+            if (requestId) {
+              for (const comp of components) {
+                await db.createMaterialRequestItem({
+                  requestId, materialName: comp.materialName,
+                  percentage: comp.percentage, sortOrder: comp.sortOrder,
+                });
+              }
+            }
+          }
+        }
         // Notify owner about new order
         const allMachines = await db.getAllMachines();
         const machine = allMachines.find(m => m.id === input.machineId);
@@ -427,6 +459,73 @@ export const appRouter = router({
         await db.bulkUpsertPermissions(input.permissions);
         return { success: true };
       }),
+  }),
+
+  // ============ MATERIAL REQUESTS ============
+  materialRequests: router({
+    list: protectedProcedure.query(async () => db.getAllMaterialRequests()),
+    get: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const request = await db.getMaterialRequestById(input.id);
+        const items = request ? await db.getMaterialRequestItems(request.id) : [];
+        return { request, items };
+      }),
+    getByOrder: protectedProcedure
+      .input(z.object({ orderId: z.number() }))
+      .query(async ({ input }) => {
+        const request = await db.getMaterialRequestByOrderId(input.orderId);
+        const items = request ? await db.getMaterialRequestItems(request.id) : [];
+        return { request, items };
+      }),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), baseWeightKg: z.string().nullable().optional(), status: z.enum(["pending", "in_progress", "completed"]).optional(), notes: z.string().nullable().optional() }))
+      .mutation(async ({ input }) => { const { id, ...data } = input; await db.updateMaterialRequest(id, data); return { success: true }; }),
+    updateItem: protectedProcedure
+      .input(z.object({ id: z.number(), calculatedKg: z.string().nullable().optional(), actualKg: z.string().nullable().optional(), batchNumber: z.string().nullable().optional() }))
+      .mutation(async ({ input }) => { const { id, ...data } = input; await db.updateMaterialRequestItem(id, data); return { success: true }; }),
+    addItem: protectedProcedure
+      .input(z.object({ requestId: z.number(), materialName: z.string(), percentage: z.string(), calculatedKg: z.string().optional(), sortOrder: z.number().optional() }))
+      .mutation(async ({ input }) => ({ id: await db.addMaterialRequestItem(input) })),
+    deleteItem: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => { await db.deleteMaterialRequestItem(input.id); return { success: true }; }),
+    recalculate: protectedProcedure
+      .input(z.object({ requestId: z.number(), baseWeightKg: z.string() }))
+      .mutation(async ({ input }) => {
+        // Update base weight and recalculate all items
+        await db.updateMaterialRequest(input.requestId, { baseWeightKg: input.baseWeightKg });
+        const items = await db.getMaterialRequestItems(input.requestId);
+        const baseKg = parseFloat(input.baseWeightKg);
+        for (const item of items) {
+          const pct = parseFloat(item.percentage);
+          const calcKg = ((pct / 100) * baseKg).toFixed(3);
+          await db.updateMaterialRequestItem(item.id, { calculatedKg: calcKg });
+        }
+        return { success: true };
+      }),
+  }),
+
+  // ============ CUSTOM REPORT FIELDS ============
+  customFields: router({
+    list: protectedProcedure.query(async () => db.getAllCustomReportFields()),
+    active: protectedProcedure.query(async () => db.getActiveCustomReportFields()),
+    create: managerProcedure
+      .input(z.object({ name: z.string(), label: z.string(), fieldType: z.enum(["text", "number", "decimal", "boolean"]), isRequired: z.boolean().optional(), sortOrder: z.number().optional() }))
+      .mutation(async ({ input }) => ({ id: await db.createCustomReportField(input) })),
+    update: managerProcedure
+      .input(z.object({ id: z.number(), name: z.string().optional(), label: z.string().optional(), fieldType: z.enum(["text", "number", "decimal", "boolean"]).optional(), isRequired: z.boolean().optional(), isActive: z.boolean().optional(), sortOrder: z.number().optional() }))
+      .mutation(async ({ input }) => { const { id, ...data } = input; await db.updateCustomReportField(id, data); return { success: true }; }),
+    delete: managerProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => { await db.deleteCustomReportField(input.id); return { success: true }; }),
+  }),
+
+  // ============ PRODUCTION ANALYTICS ============
+  productionAnalytics: router({
+    products: protectedProcedure.query(async () => db.getProductAnalytics()),
+    materials: protectedProcedure.query(async () => db.getMaterialAnalytics()),
+    orders: protectedProcedure.query(async () => db.getOrderAnalytics()),
   }),
 
   // ============ ENHANCED LOOKUPS (bulk operations) ============

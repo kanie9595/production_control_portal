@@ -133,6 +133,7 @@ vi.mock("./db", () => {
     getAllLookups: vi.fn().mockResolvedValue(lookups),
     createLookupItem: vi.fn().mockResolvedValue(10),
     updateLookupItem: vi.fn().mockResolvedValue(undefined),
+    updateLookupItemFull: vi.fn().mockResolvedValue(undefined),
     deleteLookupItem: vi.fn().mockResolvedValue(undefined),
     // Reports
     getAllShiftReports: vi.fn().mockResolvedValue(shiftReports),
@@ -177,6 +178,33 @@ vi.mock("./db", () => {
     createRecipeComponent: vi.fn().mockResolvedValue(10),
     updateRecipeComponent: vi.fn().mockResolvedValue(undefined),
     deleteRecipeComponent: vi.fn().mockResolvedValue(undefined),
+    // Permissions
+    getPermissionsForRole: vi.fn().mockResolvedValue([]),
+    setPermission: vi.fn().mockResolvedValue(undefined),
+    getPermissionsForUser: vi.fn().mockResolvedValue([]),
+    createLookupItemsBulk: vi.fn().mockResolvedValue(undefined),
+    // Material Requests
+    getAllMaterialRequests: vi.fn().mockResolvedValue([]),
+    getMaterialRequestById: vi.fn().mockResolvedValue(null),
+    getMaterialRequestByOrderId: vi.fn().mockResolvedValue(null),
+    createMaterialRequest: vi.fn().mockResolvedValue(10),
+    updateMaterialRequest: vi.fn().mockResolvedValue(undefined),
+    getMaterialRequestItems: vi.fn().mockResolvedValue([]),
+    addMaterialRequestItem: vi.fn().mockResolvedValue(10),
+    updateMaterialRequestItem: vi.fn().mockResolvedValue(undefined),
+    deleteMaterialRequestItem: vi.fn().mockResolvedValue(undefined),
+    getRecipeByProduct: vi.fn().mockResolvedValue(null),
+    getRecipesForProduct: vi.fn().mockResolvedValue([]),
+    // Custom Fields
+    getAllCustomReportFields: vi.fn().mockResolvedValue([]),
+    getActiveCustomReportFields: vi.fn().mockResolvedValue([]),
+    createCustomReportField: vi.fn().mockResolvedValue(10),
+    updateCustomReportField: vi.fn().mockResolvedValue(undefined),
+    deleteCustomReportField: vi.fn().mockResolvedValue(undefined),
+    // Production Analytics
+    getProductAnalytics: vi.fn().mockResolvedValue([]),
+    getMaterialAnalytics: vi.fn().mockResolvedValue([]),
+    getOrderAnalytics: vi.fn().mockResolvedValue([]),
   };
 });
 

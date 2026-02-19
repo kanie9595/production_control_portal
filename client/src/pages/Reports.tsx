@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 import {
   ArrowLeft, FileText, Loader2, Plus, Trash2, Download, BarChart3,
-  X, Eye, Link2, AlertTriangle,
+  X, Eye, Link2, AlertTriangle, Scale, Settings2, Check, Edit2,
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ export default function Reports() {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [analyticsProduct, setAnalyticsProduct] = useState("");
   const [confirmDeleteReport, setConfirmDeleteReport] = useState<number | null>(null);
+  const [showCustomFieldsManager, setShowCustomFieldsManager] = useState(false);
 
   // Create form
   const [shiftDate, setShiftDate] = useState(() => new Date().toISOString().split("T")[0]);
@@ -32,6 +33,7 @@ export default function Reports() {
   const reportDetail = trpc.reports.get.useQuery({ id: selectedReport! }, { enabled: !!selectedReport });
   const lookupsQuery = trpc.lookups.all.useQuery(undefined, { enabled: isAuthenticated });
   const machinesQuery = trpc.machines.list.useQuery(undefined, { enabled: isAuthenticated });
+  const customFieldsQuery = trpc.customFields.list.useQuery(undefined, { enabled: isAuthenticated });
   const analyticsQuery = trpc.reports.analytics.useQuery(
     { moldProduct: analyticsProduct },
     { enabled: showAnalytics && !!analyticsProduct }
@@ -76,13 +78,27 @@ export default function Reports() {
     onError: (err) => toast.error(err.message),
   });
 
+  // Custom fields CRUD
+  const createFieldMutation = trpc.customFields.create.useMutation({
+    onSuccess: () => { utils.customFields.list.invalidate(); toast.success("Графа добавлена"); },
+    onError: (err) => toast.error(err.message),
+  });
+  const updateFieldMutation = trpc.customFields.update.useMutation({
+    onSuccess: () => { utils.customFields.list.invalidate(); toast.success("Графа обновлена"); },
+    onError: (err) => toast.error(err.message),
+  });
+  const deleteFieldMutation = trpc.customFields.delete.useMutation({
+    onSuccess: () => { utils.customFields.list.invalidate(); toast.success("Графа удалена"); },
+    onError: (err) => toast.error(err.message),
+  });
+
   // Lookup helpers
   const lookupsByCategory = useMemo(() => {
-    const map = new Map<string, Array<{ id: number; value: string; parentProduct?: string | null }>>();
+    const map = new Map<string, Array<{ id: number; value: string; parentProduct?: string | null; standardWeight?: string | null }>>();
     for (const l of lookupsQuery.data ?? []) {
       if (!(l as any).isActive) continue;
       const arr = map.get(l.category) ?? [];
-      arr.push(l);
+      arr.push(l as any);
       map.set(l.category, arr);
     }
     return map;
@@ -99,11 +115,18 @@ export default function Reports() {
     return Array.from(products).sort();
   }, [lookupsQuery.data]);
 
+  // Active custom fields
+  const activeCustomFields = useMemo(() => {
+    return (customFieldsQuery.data ?? []).filter((f: any) => f.isActive).sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+  }, [customFieldsQuery.data]);
+
   // New row state
   const [newRow, setNewRow] = useState({
     machineNumber: "", moldProduct: "", productColor: "", planQty: 0, actualQty: 0,
-    standardCycle: "", actualCycle: "", downtimeMin: 0, downtimeReason: "", defectKg: "0", changeover: 0,
+    standardCycle: "", actualCycle: "", standardWeight: "", avgWeight: "",
+    downtimeMin: 0, downtimeReason: "", defectKg: "0", changeover: 0,
     orderId: undefined as number | undefined,
+    customFields: {} as Record<number, string>,
   });
 
   // Find machineId from machine number for order linking
@@ -120,7 +143,7 @@ export default function Reports() {
 
   // Reset orderId when machine changes
   useEffect(() => {
-    setNewRow(prev => ({ ...prev, orderId: undefined, planQty: 0 }));
+    setNewRow(prev => ({ ...prev, orderId: undefined, planQty: 0, standardWeight: "", moldProduct: "", productColor: "" }));
   }, [newRow.machineNumber]);
 
   // Get molds filtered by selected product (from order)
@@ -128,10 +151,18 @@ export default function Reports() {
     if (!newRow.orderId) return getOptions("molds");
     const order = (activeOrdersQuery.data ?? []).find((o: any) => o.id === newRow.orderId);
     if (!order) return getOptions("molds");
-    // Filter molds that match the order's product
     const productMolds = getOptions("molds").filter(m => m.parentProduct === order.product);
     return productMolds.length > 0 ? productMolds : getOptions("molds");
   }, [newRow.orderId, activeOrdersQuery.data, lookupsQuery.data]);
+
+  // Auto-fill standardWeight when mold is selected
+  useEffect(() => {
+    if (!newRow.moldProduct) return;
+    const mold = getOptions("molds").find(m => m.value === newRow.moldProduct);
+    if (mold && (mold as any).standardWeight) {
+      setNewRow(prev => ({ ...prev, standardWeight: (mold as any).standardWeight }));
+    }
+  }, [newRow.moldProduct, lookupsQuery.data]);
 
   // Auto-fill product/color/plan from selected order
   const handleOrderSelect = (orderIdStr: string) => {
@@ -142,16 +173,16 @@ export default function Reports() {
     }
     const order = (activeOrdersQuery.data ?? []).find((o: any) => o.id === orderId);
     if (order) {
-      // Auto-fill plan from order remaining quantity
       const remaining = Math.max(0, (order.quantity ?? 0) - (order.completedQty ?? 0));
-      // Find matching molds for this product
       const productMolds = getOptions("molds").filter(m => m.parentProduct === order.product);
+      const selectedMold = productMolds.length === 1 ? productMolds[0] : null;
       setNewRow(prev => ({
         ...prev,
         orderId,
-        moldProduct: productMolds.length === 1 ? productMolds[0].value : (order.moldName ?? prev.moldProduct),
+        moldProduct: selectedMold ? selectedMold.value : (order.moldName ?? prev.moldProduct),
         productColor: order.color ?? prev.productColor,
         planQty: remaining,
+        standardWeight: selectedMold && (selectedMold as any).standardWeight ? (selectedMold as any).standardWeight : prev.standardWeight,
       }));
     } else {
       setNewRow(prev => ({ ...prev, orderId }));
@@ -160,6 +191,10 @@ export default function Reports() {
 
   const handleAddRow = () => {
     if (!selectedReport || !newRow.machineNumber) { toast.error("Выберите станок"); return; }
+    const customFieldsArr = Object.entries(newRow.customFields)
+      .filter(([, v]) => v !== "")
+      .map(([fieldId, value]) => ({ fieldId: parseInt(fieldId), value: value || null }));
+
     addRowMutation.mutate({
       reportId: selectedReport,
       orderId: newRow.orderId,
@@ -170,15 +205,19 @@ export default function Reports() {
       actualQty: newRow.actualQty,
       standardCycle: newRow.standardCycle,
       actualCycle: newRow.actualCycle,
+      standardWeight: newRow.standardWeight || undefined,
+      avgWeight: newRow.avgWeight || undefined,
       downtimeMin: newRow.downtimeMin,
       downtimeReason: newRow.downtimeReason || undefined,
       defectKg: newRow.defectKg,
       changeover: newRow.changeover,
+      customFields: customFieldsArr.length > 0 ? customFieldsArr : undefined,
     });
     setNewRow({
       machineNumber: "", moldProduct: "", productColor: "", planQty: 0, actualQty: 0,
-      standardCycle: "", actualCycle: "", downtimeMin: 0, downtimeReason: "", defectKg: "0", changeover: 0,
-      orderId: undefined,
+      standardCycle: "", actualCycle: "", standardWeight: "", avgWeight: "",
+      downtimeMin: 0, downtimeReason: "", defectKg: "0", changeover: 0,
+      orderId: undefined, customFields: {},
     });
   };
 
@@ -194,8 +233,8 @@ export default function Reports() {
     <body><h1>Сменный отчёт</h1>
     <p>Дата: ${report.shiftDate} | Смена: ${report.shiftNumber} | ${(report as any).userName ?? ""}</p>
     ${report.notes ? `<p>Примечания: ${report.notes}</p>` : ""}
-    <table><tr><th>Станок</th><th>Пресс-форма</th><th>Цвет</th><th>План (кор.)</th><th>Факт (кор.)</th><th>Ст.цикл</th><th>Ф.цикл</th><th>Простой</th><th>Причина</th><th>Брак</th><th>Переналадка</th></tr>
-    ${rows.map((r: any) => `<tr><td>${r.machineNumber}</td><td>${r.moldProduct}</td><td>${r.productColor}</td><td>${r.planQty}</td><td>${r.actualQty}</td><td>${r.standardCycle}</td><td>${r.actualCycle}</td><td>${r.downtimeMin} мин</td><td>${r.downtimeReason ?? ""}</td><td>${r.defectKg} кг</td><td>${r.changeover} мин</td></tr>`).join("")}
+    <table><tr><th>Станок</th><th>Пресс-форма</th><th>Цвет</th><th>План (кор.)</th><th>Факт (кор.)</th><th>Ст.вес (г)</th><th>Ср.вес (г)</th><th>Ст.цикл</th><th>Ф.цикл</th><th>Простой</th><th>Причина</th><th>Брак</th><th>Переналадка</th></tr>
+    ${rows.map((r: any) => `<tr><td>${r.machineNumber}</td><td>${r.moldProduct}</td><td>${r.productColor}</td><td>${r.planQty}</td><td>${r.actualQty}</td><td>${r.standardWeight ?? "—"}</td><td>${r.avgWeight ?? "—"}</td><td>${r.standardCycle}</td><td>${r.actualCycle}</td><td>${r.downtimeMin} мин</td><td>${r.downtimeReason ?? ""}</td><td>${r.defectKg} кг</td><td>${r.changeover} мин</td></tr>`).join("")}
     </table></body></html>`;
     const w = window.open("", "_blank");
     if (w) { w.document.write(html); w.document.close(); w.print(); }
@@ -207,6 +246,15 @@ export default function Reports() {
     for (const l of getOptions("molds")) products.add(l.value);
     return Array.from(products);
   }, [lookupsQuery.data]);
+
+  // Custom fields manager state
+  const [newFieldName, setNewFieldName] = useState("");
+  const [newFieldLabel, setNewFieldLabel] = useState("");
+  const [newFieldType, setNewFieldType] = useState<"text" | "number" | "decimal" | "boolean">("text");
+  const [newFieldRequired, setNewFieldRequired] = useState(false);
+  const [editingFieldId, setEditingFieldId] = useState<number | null>(null);
+  const [editFieldLabel, setEditFieldLabel] = useState("");
+  const [editFieldRequired, setEditFieldRequired] = useState(false);
 
   if (loading) {
     return (
@@ -253,6 +301,11 @@ export default function Reports() {
             )}
             {!selectedReport && (
               <>
+                {isManager && (
+                  <Button variant="outline" size="sm" onClick={() => setShowCustomFieldsManager(!showCustomFieldsManager)} className="gap-2 font-mono text-xs">
+                    <Settings2 className="w-3.5 h-3.5" /> Графы
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => setShowAnalytics(!showAnalytics)} className="gap-2 font-mono text-xs">
                   <BarChart3 className="w-3.5 h-3.5" /> Аналитика
                 </Button>
@@ -293,6 +346,106 @@ export default function Reports() {
       )}
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+        {/* Custom fields manager */}
+        {showCustomFieldsManager && !selectedReport && isManager && (
+          <div className="rounded-xl border border-border p-5 space-y-4" style={{ background: "oklch(0.18 0.012 260)" }}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Settings2 className="w-4 h-4 text-primary" />
+                <span className="font-mono text-xs font-semibold text-foreground">Настраиваемые графы отчёта</span>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setShowCustomFieldsManager(false)}><X className="w-4 h-4" /></Button>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Добавляйте дополнительные графы в отчёт. Они будут отображаться при добавлении строки и в таблице.
+            </p>
+
+            {/* Existing fields */}
+            <div className="space-y-1">
+              {(customFieldsQuery.data ?? []).map((f: any) => (
+                <div key={f.id} className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "oklch(0.2 0.012 260)" }}>
+                  {editingFieldId === f.id ? (
+                    <>
+                      <input value={editFieldLabel} onChange={(e) => setEditFieldLabel(e.target.value)}
+                        className="flex-1 bg-transparent border border-primary/30 rounded px-2 py-1 text-xs text-foreground outline-none" />
+                      <label className="flex items-center gap-1 text-[9px] text-muted-foreground">
+                        <input type="checkbox" checked={editFieldRequired} onChange={(e) => setEditFieldRequired(e.target.checked)} />
+                        Обяз.
+                      </label>
+                      <Button size="sm" variant="ghost" onClick={() => {
+                        updateFieldMutation.mutate({ id: f.id, label: editFieldLabel, isRequired: editFieldRequired });
+                        setEditingFieldId(null);
+                      }}><Check className="w-3.5 h-3.5 text-green-500" /></Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditingFieldId(null)}><X className="w-3.5 h-3.5" /></Button>
+                    </>
+                  ) : (
+                    <>
+                      <span className={`flex-1 text-xs ${f.isActive ? "text-foreground" : "text-muted-foreground line-through"}`}>
+                        {f.label}
+                      </span>
+                      <span className="text-[9px] text-muted-foreground font-mono">{f.fieldType}</span>
+                      {f.isRequired && <span className="text-[9px] text-yellow-500">обяз.</span>}
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => {
+                        setEditingFieldId(f.id); setEditFieldLabel(f.label); setEditFieldRequired(f.isRequired);
+                      }}><Edit2 className="w-3 h-3 text-muted-foreground" /></Button>
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => {
+                        updateFieldMutation.mutate({ id: f.id, isActive: !f.isActive });
+                      }}>{f.isActive ? <X className="w-3 h-3 text-muted-foreground" /> : <Check className="w-3 h-3 text-green-500" />}</Button>
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => {
+                        if (confirm("Удалить графу?")) deleteFieldMutation.mutate({ id: f.id });
+                      }}><Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" /></Button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Add new field */}
+            <div className="flex flex-wrap items-end gap-2 p-3 rounded-lg border border-primary/20" style={{ background: "oklch(0.2 0.015 260)" }}>
+              <div className="flex-1 min-w-[120px]">
+                <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block">Название (системное)</label>
+                <input value={newFieldName} onChange={(e) => setNewFieldName(e.target.value.replace(/\s/g, "_").toLowerCase())}
+                  placeholder="например: batch_number"
+                  className="w-full bg-transparent border border-border rounded px-2 py-1.5 text-xs text-foreground outline-none" />
+              </div>
+              <div className="flex-1 min-w-[120px]">
+                <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block">Отображаемое имя</label>
+                <input value={newFieldLabel} onChange={(e) => setNewFieldLabel(e.target.value)}
+                  placeholder="например: Номер партии"
+                  className="w-full bg-transparent border border-border rounded px-2 py-1.5 text-xs text-foreground outline-none" />
+              </div>
+              <div className="w-24">
+                <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block">Тип</label>
+                <select value={newFieldType} onChange={(e) => setNewFieldType(e.target.value as any)}
+                  className="w-full rounded border border-border px-2 py-1.5 text-xs text-foreground"
+                  style={{ background: "oklch(0.22 0.012 260)" }}>
+                  <option value="text">Текст</option>
+                  <option value="number">Число</option>
+                  <option value="decimal">Десятичное</option>
+                  <option value="boolean">Да/Нет</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-1 text-[9px] text-muted-foreground pb-1">
+                <input type="checkbox" checked={newFieldRequired} onChange={(e) => setNewFieldRequired(e.target.checked)} />
+                Обяз.
+              </label>
+              <Button size="sm" onClick={() => {
+                if (!newFieldName.trim() || !newFieldLabel.trim()) { toast.error("Заполните название и имя"); return; }
+                createFieldMutation.mutate({
+                  name: newFieldName.trim(),
+                  label: newFieldLabel.trim(),
+                  fieldType: newFieldType,
+                  isRequired: newFieldRequired,
+                  sortOrder: (customFieldsQuery.data ?? []).length,
+                });
+                setNewFieldName(""); setNewFieldLabel(""); setNewFieldType("text"); setNewFieldRequired(false);
+              }} disabled={createFieldMutation.isPending} className="font-mono text-xs">
+                <Plus className="w-3 h-3 mr-1" /> Добавить
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Analytics panel */}
         {showAnalytics && !selectedReport && (
           <div className="rounded-xl border border-border p-5 space-y-4" style={{ background: "oklch(0.18 0.012 260)" }}>
@@ -405,51 +558,62 @@ export default function Reports() {
                             <th className="text-left py-2 px-2 text-muted-foreground font-mono">Станок</th>
                             <th className="text-left py-2 px-2 text-muted-foreground font-mono">Пресс-форма</th>
                             <th className="text-left py-2 px-2 text-muted-foreground font-mono">Цвет</th>
-                            <th className="text-right py-2 px-2 text-muted-foreground font-mono">План (кор.)</th>
-                            <th className="text-right py-2 px-2 text-muted-foreground font-mono">Факт (кор.)</th>
+                            <th className="text-right py-2 px-2 text-muted-foreground font-mono">План</th>
+                            <th className="text-right py-2 px-2 text-muted-foreground font-mono">Факт</th>
+                            <th className="text-right py-2 px-2 text-muted-foreground font-mono">Ст.вес</th>
+                            <th className="text-right py-2 px-2 text-muted-foreground font-mono">Ср.вес</th>
                             <th className="text-right py-2 px-2 text-muted-foreground font-mono">Ст.цикл</th>
                             <th className="text-right py-2 px-2 text-muted-foreground font-mono">Ф.цикл</th>
                             <th className="text-right py-2 px-2 text-muted-foreground font-mono">Простой</th>
                             <th className="text-left py-2 px-2 text-muted-foreground font-mono">Причина</th>
                             <th className="text-right py-2 px-2 text-muted-foreground font-mono">Брак</th>
-                            <th className="text-right py-2 px-2 text-muted-foreground font-mono">Переналадка</th>
+                            <th className="text-right py-2 px-2 text-muted-foreground font-mono">Перенал.</th>
                             <th className="text-center py-2 px-2 text-muted-foreground font-mono">Заказ</th>
                             <th className="py-2 px-2"></th>
                           </tr>
                         </thead>
                         <tbody>
-                          {reportDetail.data.rows.map((row: any) => (
-                            <tr key={row.id} className="border-b border-border/50 hover:bg-white/5">
-                              <td className="py-1.5 px-2 text-foreground">{row.machineNumber}</td>
-                              <td className="py-1.5 px-2 text-foreground">{row.moldProduct}</td>
-                              <td className="py-1.5 px-2 text-foreground">{row.productColor}</td>
-                              <td className="py-1.5 px-2 text-right text-foreground">{row.planQty}</td>
-                              <td className="py-1.5 px-2 text-right text-foreground font-semibold">{row.actualQty}</td>
-                              <td className="py-1.5 px-2 text-right text-foreground">{row.standardCycle}с</td>
-                              <td className="py-1.5 px-2 text-right font-semibold" style={{
-                                color: parseFloat(row.actualCycle) > parseFloat(row.standardCycle) * 1.1 ? "oklch(0.65 0.25 25)" : "oklch(0.7 0.18 145)"
-                              }}>{row.actualCycle}с</td>
-                              <td className="py-1.5 px-2 text-right text-foreground">{row.downtimeMin} мин</td>
-                              <td className="py-1.5 px-2 text-foreground">{row.downtimeReason ?? "—"}</td>
-                              <td className="py-1.5 px-2 text-right text-foreground">{row.defectKg} кг</td>
-                              <td className="py-1.5 px-2 text-right text-foreground">{row.changeover} мин</td>
-                              <td className="py-1.5 px-2 text-center">
-                                {row.orderId ? (
-                                  <span className="inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded"
-                                    style={{ background: "oklch(0.65 0.18 200 / 0.15)", color: "oklch(0.65 0.18 200)" }}>
-                                    <Link2 className="w-2.5 h-2.5" /> #{row.orderId}
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] text-muted-foreground">—</span>
-                                )}
-                              </td>
-                              <td className="py-1.5 px-2">
-                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => deleteRowMutation.mutate({ id: row.id })}>
-                                  <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
+                          {reportDetail.data.rows.map((row: any) => {
+                            const weightDeviation = row.standardWeight && row.avgWeight
+                              ? Math.abs(parseFloat(row.avgWeight) - parseFloat(row.standardWeight)) / parseFloat(row.standardWeight) * 100
+                              : 0;
+                            return (
+                              <tr key={row.id} className="border-b border-border/50 hover:bg-white/5">
+                                <td className="py-1.5 px-2 text-foreground">{row.machineNumber}</td>
+                                <td className="py-1.5 px-2 text-foreground">{row.moldProduct}</td>
+                                <td className="py-1.5 px-2 text-foreground">{row.productColor}</td>
+                                <td className="py-1.5 px-2 text-right text-foreground">{row.planQty}</td>
+                                <td className="py-1.5 px-2 text-right text-foreground font-semibold">{row.actualQty}</td>
+                                <td className="py-1.5 px-2 text-right text-foreground">{row.standardWeight ? `${row.standardWeight}г` : "—"}</td>
+                                <td className="py-1.5 px-2 text-right font-semibold" style={{
+                                  color: weightDeviation > 5 ? "oklch(0.65 0.25 25)" : weightDeviation > 2 ? "oklch(0.65 0.2 50)" : "oklch(0.7 0.18 145)"
+                                }}>{row.avgWeight ? `${row.avgWeight}г` : "—"}</td>
+                                <td className="py-1.5 px-2 text-right text-foreground">{row.standardCycle}с</td>
+                                <td className="py-1.5 px-2 text-right font-semibold" style={{
+                                  color: parseFloat(row.actualCycle) > parseFloat(row.standardCycle) * 1.1 ? "oklch(0.65 0.25 25)" : "oklch(0.7 0.18 145)"
+                                }}>{row.actualCycle}с</td>
+                                <td className="py-1.5 px-2 text-right text-foreground">{row.downtimeMin} мин</td>
+                                <td className="py-1.5 px-2 text-foreground">{row.downtimeReason ?? "—"}</td>
+                                <td className="py-1.5 px-2 text-right text-foreground">{row.defectKg} кг</td>
+                                <td className="py-1.5 px-2 text-right text-foreground">{row.changeover} мин</td>
+                                <td className="py-1.5 px-2 text-center">
+                                  {row.orderId ? (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded"
+                                      style={{ background: "oklch(0.65 0.18 200 / 0.15)", color: "oklch(0.65 0.18 200)" }}>
+                                      <Link2 className="w-2.5 h-2.5" /> #{row.orderId}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[9px] text-muted-foreground">—</span>
+                                  )}
+                                </td>
+                                <td className="py-1.5 px-2">
+                                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => deleteRowMutation.mutate({ id: row.id })}>
+                                    <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -471,12 +635,10 @@ export default function Reports() {
                       </select>
                     </div>
 
-                    {/* Order selector — appears when machine is selected */}
+                    {/* Order selector */}
                     <div>
                       <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block">
-                        <span className="flex items-center gap-1">
-                          <Link2 className="w-2.5 h-2.5" /> Заказ
-                        </span>
+                        <span className="flex items-center gap-1"><Link2 className="w-2.5 h-2.5" /> Заказ</span>
                       </label>
                       <select
                         value={newRow.orderId ?? ""}
@@ -532,6 +694,25 @@ export default function Reports() {
                         style={{ background: "oklch(0.22 0.012 260)" }} />
                     </div>
                     <div>
+                      <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block flex items-center gap-1">
+                        <Scale className="w-2.5 h-2.5" /> Ст.вес (г)
+                        {newRow.standardWeight && <span style={{ color: "oklch(0.7 0.18 145)" }}>✓</span>}
+                      </label>
+                      <input value={newRow.standardWeight} onChange={(e) => setNewRow({ ...newRow, standardWeight: e.target.value })}
+                        placeholder="Из справочника"
+                        className="w-full rounded border border-border px-2 py-1.5 text-xs text-foreground"
+                        style={{ background: "oklch(0.22 0.012 260)" }} />
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block flex items-center gap-1">
+                        <Scale className="w-2.5 h-2.5" /> Ср.вес (г)
+                      </label>
+                      <input value={newRow.avgWeight} onChange={(e) => setNewRow({ ...newRow, avgWeight: e.target.value })}
+                        placeholder="Фактический"
+                        className="w-full rounded border border-border px-2 py-1.5 text-xs text-foreground"
+                        style={{ background: "oklch(0.22 0.012 260)" }} />
+                    </div>
+                    <div>
                       <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block">Ст.цикл (с)</label>
                       <input value={newRow.standardCycle} onChange={(e) => setNewRow({ ...newRow, standardCycle: e.target.value })}
                         className="w-full rounded border border-border px-2 py-1.5 text-xs text-foreground"
@@ -570,6 +751,35 @@ export default function Reports() {
                         className="w-full rounded border border-border px-2 py-1.5 text-xs text-foreground"
                         style={{ background: "oklch(0.22 0.012 260)" }} />
                     </div>
+
+                    {/* Custom fields */}
+                    {activeCustomFields.map((f: any) => (
+                      <div key={f.id}>
+                        <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block">
+                          {f.label} {f.isRequired && <span className="text-yellow-500">*</span>}
+                        </label>
+                        {f.fieldType === "boolean" ? (
+                          <select
+                            value={newRow.customFields[f.id] ?? ""}
+                            onChange={(e) => setNewRow({ ...newRow, customFields: { ...newRow.customFields, [f.id]: e.target.value } })}
+                            className="w-full rounded border border-border px-2 py-1.5 text-xs text-foreground"
+                            style={{ background: "oklch(0.22 0.012 260)" }}>
+                            <option value="">—</option>
+                            <option value="true">Да</option>
+                            <option value="false">Нет</option>
+                          </select>
+                        ) : (
+                          <input
+                            type={f.fieldType === "number" || f.fieldType === "decimal" ? "number" : "text"}
+                            step={f.fieldType === "decimal" ? "0.01" : undefined}
+                            value={newRow.customFields[f.id] ?? ""}
+                            onChange={(e) => setNewRow({ ...newRow, customFields: { ...newRow.customFields, [f.id]: e.target.value } })}
+                            className="w-full rounded border border-border px-2 py-1.5 text-xs text-foreground"
+                            style={{ background: "oklch(0.22 0.012 260)" }} />
+                        )}
+                      </div>
+                    ))}
+
                     <div className="flex items-end">
                       <Button onClick={handleAddRow} disabled={addRowMutation.isPending} size="sm" className="font-mono text-xs w-full gap-1">
                         <Plus className="w-3 h-3" /> Добавить

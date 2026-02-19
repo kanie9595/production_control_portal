@@ -17,6 +17,10 @@ import {
   materialRecipes,
   recipeComponents,
   rolePermissions,
+  materialRequests,
+  materialRequestItems,
+  customReportFields,
+  customFieldValues,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -382,15 +386,18 @@ export async function getShiftReportRows(reportId: number) {
 export async function createShiftReportRow(data: {
   reportId: number; orderId?: number; machineNumber: string; moldProduct: string; productColor: string;
   planQty: number; actualQty: number; standardCycle: string; actualCycle: string;
+  standardWeight?: string; avgWeight?: string;
   downtimeMin: number; downtimeReason?: string; defectKg: string; changeover: number; sortOrder?: number;
 }) {
   const db = await getDb();
   if (!db) return null;
   // Convert empty strings to "0" for decimal fields to prevent MySQL insert errors
   const safeDecimal = (v: string) => (v === "" || v == null) ? "0" : v;
+  const safeDecimalNullable = (v?: string) => (!v || v === "") ? null : v;
   const result = await db.insert(shiftReportRows).values({
     reportId: data.reportId, orderId: data.orderId ?? null, machineNumber: data.machineNumber, moldProduct: data.moldProduct, productColor: data.productColor,
     planQty: data.planQty ?? 0, actualQty: data.actualQty ?? 0, standardCycle: safeDecimal(data.standardCycle), actualCycle: safeDecimal(data.actualCycle),
+    standardWeight: safeDecimalNullable(data.standardWeight), avgWeight: safeDecimalNullable(data.avgWeight),
     downtimeMin: data.downtimeMin ?? 0, downtimeReason: data.downtimeReason ?? null, defectKg: safeDecimal(data.defectKg), changeover: data.changeover ?? 0, sortOrder: data.sortOrder ?? 0,
   });
   return result[0].insertId;
@@ -657,4 +664,219 @@ export async function createLookupItemsBulk(items: Array<{ category: string; val
   if (!db) return;
   if (items.length === 0) return;
   await db.insert(lookupItems).values(items);
+}
+
+// ============ MATERIAL REQUESTS ============
+
+export async function createMaterialRequest(data: {
+  orderId: number; recipeId?: number; product: string; baseWeightKg?: string; notes?: string;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(materialRequests).values({
+    orderId: data.orderId,
+    recipeId: data.recipeId ?? null,
+    product: data.product,
+    baseWeightKg: data.baseWeightKg ?? null,
+    notes: data.notes ?? null,
+  });
+  return result[0].insertId;
+}
+
+export async function createMaterialRequestItem(data: {
+  requestId: number; materialName: string; percentage: string; calculatedKg?: string; actualKg?: string; batchNumber?: string; sortOrder?: number;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(materialRequestItems).values({
+    requestId: data.requestId,
+    materialName: data.materialName,
+    percentage: data.percentage,
+    calculatedKg: data.calculatedKg ?? null,
+    actualKg: data.actualKg ?? null,
+    batchNumber: data.batchNumber ?? null,
+    sortOrder: data.sortOrder ?? 0,
+  });
+  return result[0].insertId;
+}
+
+export async function getAllMaterialRequests() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(materialRequests).orderBy(desc(materialRequests.createdAt));
+}
+
+export async function getMaterialRequestById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(materialRequests).where(eq(materialRequests.id, id)).limit(1);
+  return result[0] ?? null;
+}
+
+export async function getMaterialRequestByOrderId(orderId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(materialRequests).where(eq(materialRequests.orderId, orderId)).limit(1);
+  return result[0] ?? null;
+}
+
+export async function getMaterialRequestItems(requestId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(materialRequestItems).where(eq(materialRequestItems.requestId, requestId)).orderBy(asc(materialRequestItems.sortOrder));
+}
+
+export async function updateMaterialRequest(id: number, data: Partial<{ baseWeightKg: string | null; status: "pending" | "in_progress" | "completed"; notes: string | null }>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(materialRequests).set(data).where(eq(materialRequests.id, id));
+}
+
+export async function updateMaterialRequestItem(id: number, data: Partial<{ calculatedKg: string | null; actualKg: string | null; batchNumber: string | null }>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(materialRequestItems).set(data).where(eq(materialRequestItems.id, id));
+}
+
+export async function addMaterialRequestItem(data: {
+  requestId: number; materialName: string; percentage: string; calculatedKg?: string; sortOrder?: number;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(materialRequestItems).values({
+    requestId: data.requestId,
+    materialName: data.materialName,
+    percentage: data.percentage,
+    calculatedKg: data.calculatedKg ?? null,
+    sortOrder: data.sortOrder ?? 0,
+  });
+  return result[0].insertId;
+}
+
+export async function deleteMaterialRequestItem(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(materialRequestItems).where(eq(materialRequestItems.id, id));
+}
+
+// ============ CUSTOM REPORT FIELDS ============
+
+export async function getAllCustomReportFields() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(customReportFields).orderBy(asc(customReportFields.sortOrder));
+}
+
+export async function getActiveCustomReportFields() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(customReportFields).where(eq(customReportFields.isActive, true)).orderBy(asc(customReportFields.sortOrder));
+}
+
+export async function createCustomReportField(data: {
+  name: string; label: string; fieldType: "text" | "number" | "decimal" | "boolean"; isRequired?: boolean; sortOrder?: number;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(customReportFields).values({
+    name: data.name,
+    label: data.label,
+    fieldType: data.fieldType,
+    isRequired: data.isRequired ?? false,
+    sortOrder: data.sortOrder ?? 0,
+  });
+  return result[0].insertId;
+}
+
+export async function updateCustomReportField(id: number, data: Partial<{ name: string; label: string; fieldType: "text" | "number" | "decimal" | "boolean"; isRequired: boolean; isActive: boolean; sortOrder: number }>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(customReportFields).set(data).where(eq(customReportFields.id, id));
+}
+
+export async function deleteCustomReportField(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(customFieldValues).where(eq(customFieldValues.fieldId, id));
+  await db.delete(customReportFields).where(eq(customReportFields.id, id));
+}
+
+export async function getCustomFieldValuesForRow(reportRowId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(customFieldValues).where(eq(customFieldValues.reportRowId, reportRowId));
+}
+
+export async function upsertCustomFieldValue(reportRowId: number, fieldId: number, value: string | null) {
+  const db = await getDb();
+  if (!db) return;
+  const existing = await db.select().from(customFieldValues)
+    .where(and(eq(customFieldValues.reportRowId, reportRowId), eq(customFieldValues.fieldId, fieldId))).limit(1);
+  if (existing.length > 0) {
+    await db.update(customFieldValues).set({ value }).where(eq(customFieldValues.id, existing[0].id));
+  } else {
+    await db.insert(customFieldValues).values({ reportRowId, fieldId, value });
+  }
+}
+
+// ============ UPDATED LOOKUP HELPERS ============
+
+export async function updateLookupItemFull(id: number, data: Partial<{ value: string; parentProduct: string | null; standardWeight: string | null; isActive: boolean; sortOrder: number }>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(lookupItems).set(data).where(eq(lookupItems.id, id));
+}
+
+export async function getRecipesForProduct(product: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(materialRecipes).where(eq(materialRecipes.product, product)).orderBy(desc(materialRecipes.createdAt));
+}
+
+// ============ ANALYTICS HELPERS ============
+
+export async function getProductAnalytics(dateFrom?: string, dateTo?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  let query = db.select({
+    product: shiftReportRows.moldProduct,
+    machineNumber: shiftReportRows.machineNumber,
+    totalPlan: sql<number>`SUM(${shiftReportRows.planQty})`,
+    totalActual: sql<number>`SUM(${shiftReportRows.actualQty})`,
+    totalDefectKg: sql<number>`SUM(${shiftReportRows.defectKg})`,
+    totalDowntimeMin: sql<number>`SUM(${shiftReportRows.downtimeMin})`,
+    rowCount: sql<number>`COUNT(*)`,
+  }).from(shiftReportRows)
+    .groupBy(shiftReportRows.moldProduct, shiftReportRows.machineNumber)
+    .orderBy(desc(sql`SUM(${shiftReportRows.actualQty})`));
+  return query;
+}
+
+export async function getMaterialAnalytics() {
+  const db = await getDb();
+  if (!db) return [];
+  // Aggregate material usage from material request items
+  return db.select({
+    materialName: materialRequestItems.materialName,
+    totalCalculatedKg: sql<number>`SUM(COALESCE(${materialRequestItems.calculatedKg}, 0))`,
+    totalActualKg: sql<number>`SUM(COALESCE(${materialRequestItems.actualKg}, 0))`,
+    requestCount: sql<number>`COUNT(DISTINCT ${materialRequestItems.requestId})`,
+  }).from(materialRequestItems)
+    .groupBy(materialRequestItems.materialName)
+    .orderBy(desc(sql`SUM(COALESCE(${materialRequestItems.calculatedKg}, 0))`));
+}
+
+export async function getOrderAnalytics() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    product: orders.product,
+    totalOrders: sql<number>`COUNT(*)`,
+    totalQuantity: sql<number>`SUM(${orders.quantity})`,
+    totalCompleted: sql<number>`SUM(${orders.completedQty})`,
+    completedOrders: sql<number>`SUM(CASE WHEN ${orders.status} = 'completed' THEN 1 ELSE 0 END)`,
+    inProgressOrders: sql<number>`SUM(CASE WHEN ${orders.status} = 'in_progress' THEN 1 ELSE 0 END)`,
+  }).from(orders)
+    .groupBy(orders.product)
+    .orderBy(desc(sql`COUNT(*)`));
 }

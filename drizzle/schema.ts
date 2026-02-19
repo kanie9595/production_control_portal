@@ -133,6 +133,8 @@ export const lookupItems = mysqlTable("lookup_items", {
   value: varchar("value", { length: 256 }).notNull(),
   /** For molds category: links mold to its product name */
   parentProduct: varchar("parentProduct", { length: 256 }),
+  /** Standard weight for product (grams), used in shift reports */
+  standardWeight: decimal("standardWeight", { precision: 8, scale: 2 }),
   sortOrder: int("sortOrder").default(0).notNull(),
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -174,6 +176,10 @@ export const shiftReportRows = mysqlTable("shift_report_rows", {
   actualQty: int("actualQty").default(0).notNull(),
   standardCycle: decimal("standardCycle", { precision: 8, scale: 2 }).default("0").notNull(),
   actualCycle: decimal("actualCycle", { precision: 8, scale: 2 }).default("0").notNull(),
+  /** Standard weight from lookup (grams) */
+  standardWeight: decimal("standardWeight", { precision: 8, scale: 2 }),
+  /** Average weight measured during production (grams) */
+  avgWeight: decimal("avgWeight", { precision: 8, scale: 2 }),
   downtimeMin: int("downtimeMin").default(0).notNull(),
   downtimeReason: varchar("downtimeReason", { length: 256 }),
   defectKg: decimal("defectKg", { precision: 8, scale: 2 }).default("0").notNull(),
@@ -231,7 +237,7 @@ export type Order = typeof orders.$inferSelect;
 // ============================================================
 
 /**
- * Material recipes — raw material formulas for orders
+ * Material recipes — raw material formulas for products
  */
 export const materialRecipes = mysqlTable("material_recipes", {
   id: int("id").autoincrement().primaryKey(),
@@ -261,6 +267,84 @@ export const recipeComponents = mysqlTable("recipe_components", {
 });
 
 export type RecipeComponent = typeof recipeComponents.$inferSelect;
+
+// ============================================================
+// MATERIAL REQUESTS MODULE (auto-created from orders)
+// ============================================================
+
+/**
+ * Material requests — auto-generated when an order is created, based on recipe
+ */
+export const materialRequests = mysqlTable("material_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  recipeId: int("recipeId"),
+  product: varchar("product", { length: 256 }).notNull(),
+  /** Total base weight in kg entered by user for calculation */
+  baseWeightKg: decimal("baseWeightKg", { precision: 10, scale: 3 }),
+  status: mysqlEnum("status", ["pending", "in_progress", "completed"]).default("pending").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type MaterialRequest = typeof materialRequests.$inferSelect;
+
+/**
+ * Material request items — individual components of a material request
+ */
+export const materialRequestItems = mysqlTable("material_request_items", {
+  id: int("id").autoincrement().primaryKey(),
+  requestId: int("requestId").notNull(),
+  materialName: varchar("materialName", { length: 256 }).notNull(),
+  percentage: decimal("percentage", { precision: 6, scale: 2 }).default("0").notNull(),
+  /** Calculated weight in kg based on percentage and base weight */
+  calculatedKg: decimal("calculatedKg", { precision: 10, scale: 3 }),
+  /** Actual weight used (manually entered) */
+  actualKg: decimal("actualKg", { precision: 10, scale: 3 }),
+  /** Raw material batch/lot number (optional) */
+  batchNumber: varchar("batchNumber", { length: 256 }),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type MaterialRequestItem = typeof materialRequestItems.$inferSelect;
+
+// ============================================================
+// CUSTOM REPORT FIELDS MODULE
+// ============================================================
+
+/**
+ * Custom report fields — user-defined columns for shift reports
+ */
+export const customReportFields = mysqlTable("custom_report_fields", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  label: varchar("label", { length: 256 }).notNull(),
+  fieldType: mysqlEnum("fieldType", ["text", "number", "decimal", "boolean"]).default("text").notNull(),
+  isRequired: boolean("isRequired").default(false).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CustomReportField = typeof customReportFields.$inferSelect;
+
+/**
+ * Custom field values — stored values for custom fields per report row
+ */
+export const customFieldValues = mysqlTable("custom_field_values", {
+  id: int("id").autoincrement().primaryKey(),
+  reportRowId: int("reportRowId").notNull(),
+  fieldId: int("fieldId").notNull(),
+  value: text("value"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CustomFieldValue = typeof customFieldValues.$inferSelect;
 
 // ============================================================
 // ROLE PERMISSIONS MODULE

@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Zap,
   Link2,
+  Scale,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
@@ -31,11 +32,12 @@ type Category = {
   color: string;
   description: string;
   hasParentProduct?: boolean;
+  hasStandardWeight?: boolean;
 };
 
 const CATEGORIES: Category[] = [
   { key: "machines", label: "Станки", icon: <Cpu className="w-5 h-5" />, color: "oklch(0.7 0.15 170)", description: "Список станков ТПА" },
-  { key: "molds", label: "Пресс-формы", icon: <BookOpen className="w-5 h-5" />, color: "oklch(0.65 0.18 200)", description: "Пресс-формы и привязка к продукции", hasParentProduct: true },
+  { key: "molds", label: "Пресс-формы", icon: <BookOpen className="w-5 h-5" />, color: "oklch(0.65 0.18 200)", description: "Пресс-формы, привязка к продукции и стандартный вес", hasParentProduct: true, hasStandardWeight: true },
   { key: "colors", label: "Цвета", icon: <Palette className="w-5 h-5" />, color: "oklch(0.72 0.19 60)", description: "Цвета изделий" },
   { key: "downtime_reasons", label: "Причины простоя", icon: <AlertTriangle className="w-5 h-5" />, color: "oklch(0.6 0.22 25)", description: "Причины простоя оборудования" },
 ];
@@ -47,8 +49,10 @@ export default function Dictionaries() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   const [editParentProduct, setEditParentProduct] = useState("");
+  const [editStandardWeight, setEditStandardWeight] = useState("");
   const [newValue, setNewValue] = useState("");
   const [newParentProduct, setNewParentProduct] = useState("");
+  const [newStandardWeight, setNewStandardWeight] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
 
   const isAdmin = user?.role === "admin";
@@ -64,6 +68,7 @@ export default function Dictionaries() {
       lookupsQuery.refetch();
       setNewValue("");
       setNewParentProduct("");
+      setNewStandardWeight("");
       setShowAddForm(false);
       toast.success("Элемент добавлен");
     },
@@ -117,14 +122,16 @@ export default function Dictionaries() {
       category: activeCategory,
       value: newValue.trim(),
       parentProduct: currentCategory.hasParentProduct && newParentProduct.trim() ? newParentProduct.trim() : undefined,
+      standardWeight: currentCategory.hasStandardWeight && newStandardWeight.trim() ? newStandardWeight.trim() : undefined,
       sortOrder: currentItems.length,
     });
   };
 
-  const handleStartEdit = (id: number, value: string, parentProduct?: string | null) => {
+  const handleStartEdit = (id: number, value: string, parentProduct?: string | null, standardWeight?: string | null) => {
     setEditingId(id);
     setEditValue(value);
     setEditParentProduct(parentProduct ?? "");
+    setEditStandardWeight(standardWeight ?? "");
   };
 
   const handleSaveEdit = (id: number) => {
@@ -133,6 +140,7 @@ export default function Dictionaries() {
       id,
       value: editValue.trim(),
       parentProduct: currentCategory.hasParentProduct ? (editParentProduct.trim() || null) : undefined,
+      standardWeight: currentCategory.hasStandardWeight ? (editStandardWeight.trim() || null) : undefined,
     });
   };
 
@@ -279,10 +287,10 @@ export default function Dictionaries() {
                   onChange={(e) => setNewValue(e.target.value)}
                   placeholder={currentCategory.hasParentProduct ? "Название пресс-формы..." : "Введите название..."}
                   className="flex-1 bg-transparent border border-border rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/50"
-                  onKeyDown={(e) => { if (e.key === "Enter" && !currentCategory.hasParentProduct) handleAdd(); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !currentCategory.hasParentProduct && !currentCategory.hasStandardWeight) handleAdd(); }}
                   autoFocus
                 />
-                {!currentCategory.hasParentProduct && (
+                {!currentCategory.hasParentProduct && !currentCategory.hasStandardWeight && (
                   <>
                     <Button size="sm" onClick={handleAdd} disabled={createMutation.isPending || !newValue.trim()}>
                       <Check className="w-4 h-4" />
@@ -305,16 +313,34 @@ export default function Dictionaries() {
                     placeholder="Например: Стакан 500"
                     list="product-suggestions"
                     className="flex-1 bg-transparent border border-border rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/50"
-                    onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
                   />
                   <datalist id="product-suggestions">
                     {uniqueProducts.map((p) => <option key={p} value={p} />)}
                   </datalist>
+                </div>
+              )}
+              {currentCategory.hasStandardWeight && (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground shrink-0">
+                    <Scale className="w-3 h-3" /> Стандарт веса (г):
+                  </div>
+                  <input
+                    type="text"
+                    value={newStandardWeight}
+                    onChange={(e) => setNewStandardWeight(e.target.value)}
+                    placeholder="Например: 12.5"
+                    className="flex-1 bg-transparent border border-border rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/50"
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+                  />
+                </div>
+              )}
+              {(currentCategory.hasParentProduct || currentCategory.hasStandardWeight) && (
+                <div className="flex items-center gap-2 justify-end">
                   <Button size="sm" onClick={handleAdd} disabled={createMutation.isPending || !newValue.trim()}>
-                    <Check className="w-4 h-4" />
+                    <Check className="w-4 h-4 mr-1" /> Добавить
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => { setShowAddForm(false); setNewValue(""); setNewParentProduct(""); }}>
-                    <X className="w-4 h-4" />
+                  <Button size="sm" variant="ghost" onClick={() => { setShowAddForm(false); setNewValue(""); setNewParentProduct(""); setNewStandardWeight(""); }}>
+                    <X className="w-4 h-4 mr-1" /> Отмена
                   </Button>
                 </div>
               )}
@@ -362,12 +388,6 @@ export default function Dictionaries() {
                           }}
                           autoFocus
                         />
-                        <Button size="sm" variant="ghost" onClick={() => handleSaveEdit(item.id)} disabled={updateMutation.isPending}>
-                          <Check className="w-4 h-4 text-green-500" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
-                          <X className="w-4 h-4 text-muted-foreground" />
-                        </Button>
                       </div>
                       {currentCategory.hasParentProduct && (
                         <div className="flex items-center gap-2 pl-0.5">
@@ -387,6 +407,28 @@ export default function Dictionaries() {
                           </datalist>
                         </div>
                       )}
+                      {currentCategory.hasStandardWeight && (
+                        <div className="flex items-center gap-2 pl-0.5">
+                          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                            <Scale className="w-2.5 h-2.5" /> Стандарт веса (г):
+                          </span>
+                          <input
+                            type="text"
+                            value={editStandardWeight}
+                            onChange={(e) => setEditStandardWeight(e.target.value)}
+                            placeholder="Например: 12.5"
+                            className="flex-1 bg-transparent border border-border rounded px-2 py-1 text-xs text-foreground outline-none"
+                          />
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => handleSaveEdit(item.id)} disabled={updateMutation.isPending}>
+                          <Check className="w-4 h-4 text-green-500" />
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
+                          <X className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     <>
@@ -402,6 +444,12 @@ export default function Dictionaries() {
                         )}
                         {currentCategory.hasParentProduct && !(item as any).parentProduct && (
                           <span className="ml-2 text-[10px] text-yellow-500/70 italic">без привязки</span>
+                        )}
+                        {currentCategory.hasStandardWeight && (item as any).standardWeight && (
+                          <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded"
+                            style={{ background: "oklch(0.7 0.15 170 / 0.12)", color: "oklch(0.7 0.15 170)" }}>
+                            <Scale className="w-2.5 h-2.5" /> {(item as any).standardWeight} г
+                          </span>
                         )}
                       </div>
                       {!item.isActive && (
@@ -427,7 +475,7 @@ export default function Dictionaries() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => handleStartEdit(item.id, item.value, (item as any).parentProduct)}
+                            onClick={() => handleStartEdit(item.id, item.value, (item as any).parentProduct, (item as any).standardWeight)}
                             className="text-muted-foreground hover:text-primary h-7 w-7 p-0"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
