@@ -164,6 +164,7 @@ export type ShiftReport = typeof shiftReports.$inferSelect;
 export const shiftReportRows = mysqlTable("shift_report_rows", {
   id: int("id").autoincrement().primaryKey(),
   reportId: int("reportId").notNull(),
+  orderId: int("orderId"),
   machineNumber: varchar("machineNumber", { length: 64 }).notNull(),
   moldProduct: varchar("moldProduct", { length: 256 }).notNull(),
   productColor: varchar("productColor", { length: 128 }).notNull(),

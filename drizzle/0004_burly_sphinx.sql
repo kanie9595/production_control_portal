@@ -1,0 +1,1 @@
+ALTER TABLE `shift_report_rows` ADD `orderId` int;

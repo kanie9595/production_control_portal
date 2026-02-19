@@ -366,14 +366,14 @@ export async function getShiftReportRows(reportId: number) {
 }
 
 export async function createShiftReportRow(data: {
-  reportId: number; machineNumber: string; moldProduct: string; productColor: string;
+  reportId: number; orderId?: number; machineNumber: string; moldProduct: string; productColor: string;
   planQty: number; actualQty: number; standardCycle: string; actualCycle: string;
   downtimeMin: number; downtimeReason?: string; defectKg: string; changeover: number; sortOrder?: number;
 }) {
   const db = await getDb();
   if (!db) return null;
   const result = await db.insert(shiftReportRows).values({
-    reportId: data.reportId, machineNumber: data.machineNumber, moldProduct: data.moldProduct, productColor: data.productColor,
+    reportId: data.reportId, orderId: data.orderId ?? null, machineNumber: data.machineNumber, moldProduct: data.moldProduct, productColor: data.productColor,
     planQty: data.planQty, actualQty: data.actualQty, standardCycle: data.standardCycle, actualCycle: data.actualCycle,
     downtimeMin: data.downtimeMin, downtimeReason: data.downtimeReason ?? null, defectKg: data.defectKg, changeover: data.changeover, sortOrder: data.sortOrder ?? 0,
   });
@@ -384,6 +384,7 @@ export async function updateShiftReportRow(id: number, data: Partial<{
   machineNumber: string; moldProduct: string; productColor: string;
   planQty: number; actualQty: number; standardCycle: string; actualCycle: string;
   downtimeMin: number; downtimeReason: string | null; defectKg: string; changeover: number;
+  orderId: number | null;
 }>) {
   const db = await getDb();
   if (!db) return;
@@ -400,6 +401,33 @@ export async function getReportAnalytics(moldProduct: string) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(shiftReportRows).where(eq(shiftReportRows.moldProduct, moldProduct)).orderBy(desc(shiftReportRows.createdAt));
+}
+
+export async function getOrderById(orderId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  return result[0] ?? null;
+}
+
+export async function incrementOrderCompletedQty(orderId: number, amount: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(orders).set({ completedQty: sql`${orders.completedQty} + ${amount}` }).where(eq(orders.id, orderId));
+}
+
+export async function decrementOrderCompletedQty(orderId: number, amount: number) {
+  const db = await getDb();
+  if (!db) return;
+  // Ensure completedQty doesn't go below 0
+  await db.update(orders).set({ completedQty: sql`GREATEST(0, ${orders.completedQty} - ${amount})` }).where(eq(orders.id, orderId));
+}
+
+export async function getShiftReportRowById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(shiftReportRows).where(eq(shiftReportRows.id, id)).limit(1);
+  return result[0] ?? null;
 }
 
 // ============ MACHINES ============

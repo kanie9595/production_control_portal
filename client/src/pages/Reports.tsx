@@ -3,10 +3,10 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 import {
-  ArrowLeft, FileText, Loader2, Plus, Trash2, Save, Download, BarChart3,
-  ChevronDown, ChevronUp, X, Eye,
+  ArrowLeft, FileText, Loader2, Plus, Trash2, Download, BarChart3,
+  X, Eye, Link2,
 } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 
 export default function Reports() {
@@ -26,6 +26,7 @@ export default function Reports() {
   const reportsQuery = trpc.reports.list.useQuery(undefined, { enabled: isAuthenticated });
   const reportDetail = trpc.reports.get.useQuery({ id: selectedReport! }, { enabled: !!selectedReport });
   const lookupsQuery = trpc.lookups.all.useQuery(undefined, { enabled: isAuthenticated });
+  const machinesQuery = trpc.machines.list.useQuery(undefined, { enabled: isAuthenticated });
   const analyticsQuery = trpc.reports.analytics.useQuery(
     { moldProduct: analyticsProduct },
     { enabled: showAnalytics && !!analyticsProduct }
@@ -41,11 +42,21 @@ export default function Reports() {
     onError: (err) => toast.error(err.message),
   });
   const addRowMutation = trpc.reports.addRow.useMutation({
-    onSuccess: () => { toast.success("Строка добавлена"); utils.reports.get.invalidate(); },
+    onSuccess: () => {
+      toast.success("Строка добавлена");
+      utils.reports.get.invalidate();
+      utils.orders.list.invalidate();
+      utils.orders.forMachine.invalidate();
+    },
     onError: (err) => toast.error(err.message),
   });
   const deleteRowMutation = trpc.reports.deleteRow.useMutation({
-    onSuccess: () => { toast.success("Строка удалена"); utils.reports.get.invalidate(); },
+    onSuccess: () => {
+      toast.success("Строка удалена");
+      utils.reports.get.invalidate();
+      utils.orders.list.invalidate();
+      utils.orders.forMachine.invalidate();
+    },
     onError: (err) => toast.error(err.message),
   });
 
@@ -53,6 +64,7 @@ export default function Reports() {
   const lookupsByCategory = useMemo(() => {
     const map = new Map<string, Array<{ id: number; value: string }>>();
     for (const l of lookupsQuery.data ?? []) {
+      if (!(l as any).isActive) continue;
       const arr = map.get(l.category) ?? [];
       arr.push(l);
       map.set(l.category, arr);
@@ -66,15 +78,68 @@ export default function Reports() {
   const [newRow, setNewRow] = useState({
     machineNumber: "", moldProduct: "", productColor: "", planQty: 0, actualQty: 0,
     standardCycle: "", actualCycle: "", downtimeMin: 0, downtimeReason: "", defectKg: "0", changeover: 0,
+    orderId: undefined as number | undefined,
   });
+
+  // Find machineId from machine number for order linking
+  const selectedMachineForRow = useMemo(() => {
+    if (!newRow.machineNumber) return null;
+    return (machinesQuery.data ?? []).find(m => m.number === newRow.machineNumber) ?? null;
+  }, [newRow.machineNumber, machinesQuery.data]);
+
+  // Fetch active orders for the selected machine
+  const activeOrdersQuery = trpc.orders.activeOrdersForMachine.useQuery(
+    { machineId: selectedMachineForRow?.id ?? 0 },
+    { enabled: !!selectedMachineForRow }
+  );
+
+  // Reset orderId when machine changes
+  useEffect(() => {
+    setNewRow(prev => ({ ...prev, orderId: undefined }));
+  }, [newRow.machineNumber]);
+
+  // Auto-fill product/color from selected order
+  const handleOrderSelect = (orderIdStr: string) => {
+    const orderId = orderIdStr ? parseInt(orderIdStr) : undefined;
+    if (!orderId) {
+      setNewRow(prev => ({ ...prev, orderId: undefined }));
+      return;
+    }
+    const order = (activeOrdersQuery.data ?? []).find((o: any) => o.id === orderId);
+    if (order) {
+      setNewRow(prev => ({
+        ...prev,
+        orderId,
+        moldProduct: order.moldName ?? order.product ?? prev.moldProduct,
+        productColor: order.color ?? prev.productColor,
+      }));
+    } else {
+      setNewRow(prev => ({ ...prev, orderId }));
+    }
+  };
 
   const handleAddRow = () => {
     if (!selectedReport || !newRow.machineNumber) { toast.error("Выберите станок"); return; }
     addRowMutation.mutate({
       reportId: selectedReport,
-      ...newRow,
+      orderId: newRow.orderId,
+      machineNumber: newRow.machineNumber,
+      moldProduct: newRow.moldProduct,
+      productColor: newRow.productColor,
+      planQty: newRow.planQty,
+      actualQty: newRow.actualQty,
+      standardCycle: newRow.standardCycle,
+      actualCycle: newRow.actualCycle,
+      downtimeMin: newRow.downtimeMin,
+      downtimeReason: newRow.downtimeReason || undefined,
+      defectKg: newRow.defectKg,
+      changeover: newRow.changeover,
     });
-    setNewRow({ machineNumber: "", moldProduct: "", productColor: "", planQty: 0, actualQty: 0, standardCycle: "", actualCycle: "", downtimeMin: 0, downtimeReason: "", defectKg: "0", changeover: 0 });
+    setNewRow({
+      machineNumber: "", moldProduct: "", productColor: "", planQty: 0, actualQty: 0,
+      standardCycle: "", actualCycle: "", downtimeMin: 0, downtimeReason: "", defectKg: "0", changeover: 0,
+      orderId: undefined,
+    });
   };
 
   const handleExportPdf = () => {
@@ -89,7 +154,7 @@ export default function Reports() {
     <body><h1>Сменный отчёт</h1>
     <p>Дата: ${report.shiftDate} | Смена: ${report.shiftNumber} | ${(report as any).userName ?? ""}</p>
     ${report.notes ? `<p>Примечания: ${report.notes}</p>` : ""}
-    <table><tr><th>Станок</th><th>Пресс-форма</th><th>Цвет</th><th>План</th><th>Факт</th><th>Ст.цикл</th><th>Ф.цикл</th><th>Простой</th><th>Причина</th><th>Брак</th><th>Переналадка</th></tr>
+    <table><tr><th>Станок</th><th>Пресс-форма</th><th>Цвет</th><th>План (кор.)</th><th>Факт (кор.)</th><th>Ст.цикл</th><th>Ф.цикл</th><th>Простой</th><th>Причина</th><th>Брак</th><th>Переналадка</th></tr>
     ${rows.map((r: any) => `<tr><td>${r.machineNumber}</td><td>${r.moldProduct}</td><td>${r.productColor}</td><td>${r.planQty}</td><td>${r.actualQty}</td><td>${r.standardCycle}</td><td>${r.actualCycle}</td><td>${r.downtimeMin} мин</td><td>${r.downtimeReason ?? ""}</td><td>${r.defectKg} кг</td><td>${r.changeover} мин</td></tr>`).join("")}
     </table></body></html>`;
     const w = window.open("", "_blank");
@@ -99,12 +164,9 @@ export default function Reports() {
   // Unique products for analytics dropdown
   const uniqueProducts = useMemo(() => {
     const products = new Set<string>();
-    for (const r of reportsQuery.data ?? []) {
-      // We'll use lookup data for products
-    }
-    for (const l of getOptions("mold_product")) products.add(l.value);
+    for (const l of getOptions("molds")) products.add(l.value);
     return Array.from(products);
-  }, [reportsQuery.data, lookupsQuery.data]);
+  }, [lookupsQuery.data]);
 
   if (loading) {
     return (
@@ -306,14 +368,15 @@ export default function Reports() {
                             <th className="text-left py-2 px-2 text-muted-foreground font-mono">Станок</th>
                             <th className="text-left py-2 px-2 text-muted-foreground font-mono">Пресс-форма</th>
                             <th className="text-left py-2 px-2 text-muted-foreground font-mono">Цвет</th>
-                            <th className="text-right py-2 px-2 text-muted-foreground font-mono">План</th>
-                            <th className="text-right py-2 px-2 text-muted-foreground font-mono">Факт</th>
+                            <th className="text-right py-2 px-2 text-muted-foreground font-mono">План (кор.)</th>
+                            <th className="text-right py-2 px-2 text-muted-foreground font-mono">Факт (кор.)</th>
                             <th className="text-right py-2 px-2 text-muted-foreground font-mono">Ст.цикл</th>
                             <th className="text-right py-2 px-2 text-muted-foreground font-mono">Ф.цикл</th>
                             <th className="text-right py-2 px-2 text-muted-foreground font-mono">Простой</th>
                             <th className="text-left py-2 px-2 text-muted-foreground font-mono">Причина</th>
                             <th className="text-right py-2 px-2 text-muted-foreground font-mono">Брак</th>
                             <th className="text-right py-2 px-2 text-muted-foreground font-mono">Переналадка</th>
+                            <th className="text-center py-2 px-2 text-muted-foreground font-mono">Заказ</th>
                             <th className="py-2 px-2"></th>
                           </tr>
                         </thead>
@@ -333,6 +396,16 @@ export default function Reports() {
                               <td className="py-1.5 px-2 text-foreground">{row.downtimeReason ?? "—"}</td>
                               <td className="py-1.5 px-2 text-right text-foreground">{row.defectKg} кг</td>
                               <td className="py-1.5 px-2 text-right text-foreground">{row.changeover} мин</td>
+                              <td className="py-1.5 px-2 text-center">
+                                {row.orderId ? (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded"
+                                    style={{ background: "oklch(0.65 0.18 200 / 0.15)", color: "oklch(0.65 0.18 200)" }}>
+                                    <Link2 className="w-2.5 h-2.5" /> #{row.orderId}
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] text-muted-foreground">—</span>
+                                )}
+                              </td>
                               <td className="py-1.5 px-2">
                                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => deleteRowMutation.mutate({ id: row.id })}>
                                   <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
@@ -349,6 +422,7 @@ export default function Reports() {
                 {/* Add new row */}
                 <div className="rounded-xl border border-border p-4 space-y-3" style={{ background: "oklch(0.18 0.012 260)" }}>
                   <span className="font-mono text-xs font-semibold text-foreground">Добавить строку</span>
+
                   <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
                     <div>
                       <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block">Станок</label>
@@ -356,16 +430,39 @@ export default function Reports() {
                         className="w-full rounded border border-border px-2 py-1.5 text-xs text-foreground"
                         style={{ background: "oklch(0.22 0.012 260)" }}>
                         <option value="">—</option>
-                        {getOptions("machine_number").map((o) => <option key={o.id} value={o.value}>{o.value}</option>)}
+                        {getOptions("machines").map((o) => <option key={o.id} value={o.value}>{o.value}</option>)}
                       </select>
                     </div>
+
+                    {/* Order selector — appears when machine is selected */}
+                    <div>
+                      <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block">
+                        <span className="flex items-center gap-1">
+                          <Link2 className="w-2.5 h-2.5" /> Заказ
+                        </span>
+                      </label>
+                      <select
+                        value={newRow.orderId ?? ""}
+                        onChange={(e) => handleOrderSelect(e.target.value)}
+                        disabled={!selectedMachineForRow}
+                        className="w-full rounded border border-border px-2 py-1.5 text-xs text-foreground disabled:opacity-50"
+                        style={{ background: "oklch(0.22 0.012 260)" }}>
+                        <option value="">Без заказа</option>
+                        {(activeOrdersQuery.data ?? []).map((o: any) => (
+                          <option key={o.id} value={o.id}>
+                            #{o.id} {o.product} ({o.completedQty ?? 0}/{o.quantity} кор.)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                     <div>
                       <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block">Пресс-форма</label>
                       <select value={newRow.moldProduct} onChange={(e) => setNewRow({ ...newRow, moldProduct: e.target.value })}
                         className="w-full rounded border border-border px-2 py-1.5 text-xs text-foreground"
                         style={{ background: "oklch(0.22 0.012 260)" }}>
                         <option value="">—</option>
-                        {getOptions("mold_product").map((o) => <option key={o.id} value={o.value}>{o.value}</option>)}
+                        {getOptions("molds").map((o) => <option key={o.id} value={o.value}>{o.value}</option>)}
                       </select>
                     </div>
                     <div>
@@ -374,17 +471,17 @@ export default function Reports() {
                         className="w-full rounded border border-border px-2 py-1.5 text-xs text-foreground"
                         style={{ background: "oklch(0.22 0.012 260)" }}>
                         <option value="">—</option>
-                        {getOptions("product_color").map((o) => <option key={o.id} value={o.value}>{o.value}</option>)}
+                        {getOptions("colors").map((o) => <option key={o.id} value={o.value}>{o.value}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block">План (шт)</label>
+                      <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block">План (кор.)</label>
                       <input type="number" value={newRow.planQty || ""} onChange={(e) => setNewRow({ ...newRow, planQty: parseInt(e.target.value) || 0 })}
                         className="w-full rounded border border-border px-2 py-1.5 text-xs text-foreground"
                         style={{ background: "oklch(0.22 0.012 260)" }} />
                     </div>
                     <div>
-                      <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block">Факт (шт)</label>
+                      <label className="text-[9px] text-muted-foreground uppercase mb-0.5 block">Факт (кор.)</label>
                       <input type="number" value={newRow.actualQty || ""} onChange={(e) => setNewRow({ ...newRow, actualQty: parseInt(e.target.value) || 0 })}
                         className="w-full rounded border border-border px-2 py-1.5 text-xs text-foreground"
                         style={{ background: "oklch(0.22 0.012 260)" }} />
@@ -413,7 +510,7 @@ export default function Reports() {
                         className="w-full rounded border border-border px-2 py-1.5 text-xs text-foreground"
                         style={{ background: "oklch(0.22 0.012 260)" }}>
                         <option value="">—</option>
-                        {getOptions("downtime_reason").map((o) => <option key={o.id} value={o.value}>{o.value}</option>)}
+                        {getOptions("downtime_reasons").map((o) => <option key={o.id} value={o.value}>{o.value}</option>)}
                       </select>
                     </div>
                     <div>
@@ -434,6 +531,15 @@ export default function Reports() {
                       </Button>
                     </div>
                   </div>
+
+                  {/* Order link info */}
+                  {newRow.orderId && (
+                    <div className="flex items-center gap-2 p-2 rounded-lg text-[10px] font-mono"
+                      style={{ background: "oklch(0.65 0.18 200 / 0.08)", color: "oklch(0.65 0.18 200)" }}>
+                      <Link2 className="w-3 h-3" />
+                      Привязано к заказу #{newRow.orderId}. Факт будет автоматически зачтён в заказ.
+                    </div>
+                  )}
                 </div>
               </>
             ) : (

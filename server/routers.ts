@@ -246,11 +246,18 @@ export const appRouter = router({
       }),
     addRow: protectedProcedure
       .input(z.object({
-        reportId: z.number(), machineNumber: z.string(), moldProduct: z.string(), productColor: z.string(),
+        reportId: z.number(), orderId: z.number().optional(), machineNumber: z.string(), moldProduct: z.string(), productColor: z.string(),
         planQty: z.number(), actualQty: z.number(), standardCycle: z.string(), actualCycle: z.string(),
         downtimeMin: z.number(), downtimeReason: z.string().optional(), defectKg: z.string(), changeover: z.number(), sortOrder: z.number().optional(),
       }))
-      .mutation(async ({ input }) => ({ id: await db.createShiftReportRow(input) })),
+      .mutation(async ({ input }) => {
+        const id = await db.createShiftReportRow(input);
+        // Auto-deduct: increment order completedQty when actualQty is reported
+        if (input.orderId && input.actualQty > 0) {
+          await db.incrementOrderCompletedQty(input.orderId, input.actualQty);
+        }
+        return { id };
+      }),
     updateRow: protectedProcedure
       .input(z.object({
         id: z.number(), machineNumber: z.string().optional(), moldProduct: z.string().optional(), productColor: z.string().optional(),
@@ -260,7 +267,15 @@ export const appRouter = router({
       .mutation(async ({ input }) => { const { id, ...data } = input; await db.updateShiftReportRow(id, data); return { success: true }; }),
     deleteRow: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => { await db.deleteShiftReportRow(input.id); return { success: true }; }),
+      .mutation(async ({ input }) => {
+        // Reverse the deduction from the order before deleting
+        const row = await db.getShiftReportRowById(input.id);
+        if (row && row.orderId && row.actualQty > 0) {
+          await db.decrementOrderCompletedQty(row.orderId, row.actualQty);
+        }
+        await db.deleteShiftReportRow(input.id);
+        return { success: true };
+      }),
     analytics: protectedProcedure
       .input(z.object({ moldProduct: z.string() }))
       .query(async ({ input }) => db.getReportAnalytics(input.moldProduct)),
@@ -286,7 +301,7 @@ export const appRouter = router({
     create: managerProcedure
       .input(z.object({
         machineId: z.number(), product: z.string(), color: z.string().optional(), quantity: z.number(),
-        moldName: z.string().optional(), rawMaterial: z.string().optional(), notes: z.string().optional(),
+        moldName: z.string().optional(), notes: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const id = await db.createOrder({ ...input, createdById: ctx.user.id });
@@ -296,7 +311,7 @@ export const appRouter = router({
         try {
           await notifyOwner({
             title: `Новый заказ: ${input.product}`,
-            content: `Станок: ${machine?.number ?? "?"} (${machine?.name ?? "?"}). Количество: ${input.quantity} шт. Цвет: ${input.color ?? "не указан"}. Создал: ${ctx.user.name ?? "Менеджер"}.`,
+            content: `Станок: ${machine?.number ?? "?"} (${machine?.name ?? "?"}). Количество: ${input.quantity} кор. Цвет: ${input.color ?? "не указан"}. Создал: ${ctx.user.name ?? "Менеджер"}.`,
           });
         } catch (e) { console.warn("[Orders] Failed to notify:", e); }
         return { id };
@@ -307,9 +322,16 @@ export const appRouter = router({
     update: managerProcedure
       .input(z.object({
         orderId: z.number(), product: z.string().optional(), color: z.string().optional(), quantity: z.number().optional(),
-        completedQty: z.number().optional(), moldName: z.string().optional(), rawMaterial: z.string().optional(), notes: z.string().optional(),
+        completedQty: z.number().optional(), moldName: z.string().optional(), notes: z.string().optional(),
       }))
       .mutation(async ({ input }) => { const { orderId, ...data } = input; await db.updateOrder(orderId, data); return { success: true }; }),
+    // Get active/pending orders for a machine (for report linking)
+    activeOrdersForMachine: protectedProcedure
+      .input(z.object({ machineId: z.number() }))
+      .query(async ({ input }) => {
+        const allOrders = await db.getOrdersForMachine(input.machineId);
+        return allOrders.filter(o => o.status === "in_progress" || o.status === "pending");
+      }),
   }),
 
   // ============ MATERIAL RECIPES ============

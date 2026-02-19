@@ -39,7 +39,6 @@ export default function Orders() {
   const [color, setColor] = useState("");
   const [quantity, setQuantity] = useState(0);
   const [moldName, setMoldName] = useState("");
-  const [rawMaterial, setRawMaterial] = useState("");
   const [orderNotes, setOrderNotes] = useState("");
 
   const utils = trpc.useUtils();
@@ -50,11 +49,27 @@ export default function Orders() {
     { enabled: !!selectedMachine }
   );
 
+  // Fetch lookups for dropdown selectors
+  const lookupsQuery = trpc.lookups.all.useQuery(undefined, { enabled: isAuthenticated });
+
+  const lookupsByCategory = useMemo(() => {
+    const map = new Map<string, Array<{ id: number; value: string }>>();
+    for (const l of lookupsQuery.data ?? []) {
+      if (!l.isActive) continue;
+      const arr = map.get(l.category) ?? [];
+      arr.push(l);
+      map.set(l.category, arr);
+    }
+    return map;
+  }, [lookupsQuery.data]);
+
+  const getOptions = (cat: string) => lookupsByCategory.get(cat) ?? [];
+
   const createOrderMutation = trpc.orders.create.useMutation({
     onSuccess: () => {
       toast.success("Заказ создан");
       setShowCreateOrder(false);
-      setProduct(""); setColor(""); setQuantity(0); setMoldName(""); setRawMaterial(""); setOrderNotes("");
+      setProduct(""); setColor(""); setQuantity(0); setMoldName(""); setOrderNotes("");
       utils.orders.list.invalidate();
       utils.orders.forMachine.invalidate();
     },
@@ -133,6 +148,7 @@ export default function Orders() {
               {machines.map((machine) => {
                 const st = statusConfig[machine.status] ?? statusConfig.idle;
                 const activeOrder = machineOrderMap.get(machine.id);
+                const remaining = activeOrder ? activeOrder.quantity - (activeOrder.completedQty ?? 0) : 0;
                 return (
                   <button key={machine.id} onClick={() => setSelectedMachine(machine.id)}
                     className="rounded-xl border border-border p-3 text-left hover:border-primary/50 transition-all group relative"
@@ -148,8 +164,13 @@ export default function Orders() {
                     {activeOrder && (
                       <div className="mt-2 pt-2 border-t border-border/50">
                         <p className="text-[8px] text-muted-foreground truncate">{activeOrder.product}</p>
-                        <p className="text-[8px] font-mono" style={{ color: "oklch(0.75 0.15 85)" }}>
-                          {activeOrder.completedQty ?? 0}/{activeOrder.quantity} шт
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <p className="text-[8px] font-mono" style={{ color: "oklch(0.75 0.15 85)" }}>
+                            {activeOrder.completedQty ?? 0}/{activeOrder.quantity} кор.
+                          </p>
+                        </div>
+                        <p className="text-[7px] font-mono mt-0.5" style={{ color: remaining > 0 ? "oklch(0.65 0.18 200)" : "oklch(0.7 0.18 145)" }}>
+                          Осталось: {Math.max(0, remaining)} кор.
                         </p>
                       </div>
                     )}
@@ -180,7 +201,6 @@ export default function Orders() {
                     style={{ background: statusConfig[selectedMachineData.status]?.bg, color: statusConfig[selectedMachineData.status]?.color }}>
                     {statusConfig[selectedMachineData.status]?.label}
                   </span>
-
                 </div>
               </div>
               <Button variant="outline" size="sm" onClick={() => setShowHistory(!showHistory)} className="gap-1 font-mono text-xs">
@@ -198,33 +218,36 @@ export default function Orders() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   <div>
                     <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Продукция *</label>
-                    <input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="Стакан 200мл"
+                    <select value={product} onChange={(e) => setProduct(e.target.value)}
                       className="w-full rounded-lg border border-border px-3 py-2 text-sm text-foreground"
-                      style={{ background: "oklch(0.22 0.012 260)" }} />
+                      style={{ background: "oklch(0.22 0.012 260)" }}>
+                      <option value="">Выберите продукцию...</option>
+                      {getOptions("molds").map((o) => <option key={o.id} value={o.value}>{o.value}</option>)}
+                    </select>
                   </div>
                   <div>
                     <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Цвет</label>
-                    <input value={color} onChange={(e) => setColor(e.target.value)} placeholder="Прозрачный"
+                    <select value={color} onChange={(e) => setColor(e.target.value)}
                       className="w-full rounded-lg border border-border px-3 py-2 text-sm text-foreground"
-                      style={{ background: "oklch(0.22 0.012 260)" }} />
+                      style={{ background: "oklch(0.22 0.012 260)" }}>
+                      <option value="">Выберите цвет...</option>
+                      {getOptions("colors").map((o) => <option key={o.id} value={o.value}>{o.value}</option>)}
+                    </select>
                   </div>
                   <div>
-                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Количество (шт) *</label>
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Количество (кор.) *</label>
                     <input type="number" value={quantity || ""} onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
                       className="w-full rounded-lg border border-border px-3 py-2 text-sm text-foreground"
                       style={{ background: "oklch(0.22 0.012 260)" }} />
                   </div>
                   <div>
                     <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Пресс-форма</label>
-                    <input value={moldName} onChange={(e) => setMoldName(e.target.value)} placeholder="ПФ-200-01"
+                    <select value={moldName} onChange={(e) => setMoldName(e.target.value)}
                       className="w-full rounded-lg border border-border px-3 py-2 text-sm text-foreground"
-                      style={{ background: "oklch(0.22 0.012 260)" }} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Сырьё</label>
-                    <input value={rawMaterial} onChange={(e) => setRawMaterial(e.target.value)} placeholder="ПП 01030"
-                      className="w-full rounded-lg border border-border px-3 py-2 text-sm text-foreground"
-                      style={{ background: "oklch(0.22 0.012 260)" }} />
+                      style={{ background: "oklch(0.22 0.012 260)" }}>
+                      <option value="">Выберите пресс-форму...</option>
+                      {getOptions("molds").map((o) => <option key={o.id} value={o.value}>{o.value}</option>)}
+                    </select>
                   </div>
                   <div>
                     <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Примечания</label>
@@ -241,7 +264,6 @@ export default function Orders() {
                     color: color.trim() || undefined,
                     quantity,
                     moldName: moldName.trim() || undefined,
-                    rawMaterial: rawMaterial.trim() || undefined,
                     notes: orderNotes.trim() || undefined,
                   });
                 }} disabled={createOrderMutation.isPending} className="font-mono text-xs">
@@ -272,6 +294,9 @@ export default function Orders() {
                   <div className="divide-y divide-border">
                     {orders.map((order: any) => {
                       const os = orderStatusConfig[order.status] ?? orderStatusConfig.pending;
+                      const remaining = Math.max(0, order.quantity - (order.completedQty ?? 0));
+                      const completedQty = order.completedQty ?? 0;
+                      const progressPercent = order.quantity > 0 ? Math.min(100, (completedQty / order.quantity) * 100) : 0;
                       return (
                         <div key={order.id} className="p-4 space-y-2">
                           <div className="flex items-start justify-between">
@@ -285,9 +310,19 @@ export default function Orders() {
                               </div>
                               <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
                                 {order.color && <span>Цвет: {order.color}</span>}
-                                <span>Кол-во: {order.completedQty ?? 0}/{order.quantity} шт</span>
                                 {order.moldName && <span>ПФ: {order.moldName}</span>}
-                                {order.rawMaterial && <span>Сырьё: {order.rawMaterial}</span>}
+                              </div>
+                              {/* Plan / Completed / Remaining */}
+                              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
+                                <span className="text-[10px] font-mono text-muted-foreground">
+                                  План: <span className="text-foreground font-semibold">{order.quantity} кор.</span>
+                                </span>
+                                <span className="text-[10px] font-mono" style={{ color: "oklch(0.7 0.18 145)" }}>
+                                  Выполнено: <span className="font-semibold">{completedQty} кор.</span>
+                                </span>
+                                <span className="text-[10px] font-mono" style={{ color: remaining > 0 ? "oklch(0.65 0.18 200)" : "oklch(0.7 0.18 145)" }}>
+                                  Осталось: <span className="font-semibold">{remaining} кор.</span>
+                                </span>
                               </div>
                               {order.notes && <p className="text-[10px] text-muted-foreground mt-1">{order.notes}</p>}
                               <p className="text-[9px] text-muted-foreground mt-1">
@@ -319,11 +354,14 @@ export default function Orders() {
                           </div>
                           {/* Progress bar */}
                           {(order.status === "in_progress" || order.status === "pending") && order.quantity > 0 && (
-                            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "oklch(0.22 0.012 260)" }}>
-                              <div className="h-full rounded-full transition-all" style={{
-                                width: `${Math.min(100, ((order.completedQty ?? 0) / order.quantity) * 100)}%`,
-                                background: os.color,
-                              }} />
+                            <div className="space-y-1">
+                              <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(0.22 0.012 260)" }}>
+                                <div className="h-full rounded-full transition-all" style={{
+                                  width: `${progressPercent}%`,
+                                  background: progressPercent >= 100 ? "oklch(0.7 0.18 145)" : os.color,
+                                }} />
+                              </div>
+                              <p className="text-[9px] font-mono text-muted-foreground text-right">{progressPercent.toFixed(0)}%</p>
                             </div>
                           )}
                         </div>
