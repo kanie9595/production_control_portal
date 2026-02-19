@@ -386,10 +386,12 @@ export async function createShiftReportRow(data: {
 }) {
   const db = await getDb();
   if (!db) return null;
+  // Convert empty strings to "0" for decimal fields to prevent MySQL insert errors
+  const safeDecimal = (v: string) => (v === "" || v == null) ? "0" : v;
   const result = await db.insert(shiftReportRows).values({
     reportId: data.reportId, orderId: data.orderId ?? null, machineNumber: data.machineNumber, moldProduct: data.moldProduct, productColor: data.productColor,
-    planQty: data.planQty, actualQty: data.actualQty, standardCycle: data.standardCycle, actualCycle: data.actualCycle,
-    downtimeMin: data.downtimeMin, downtimeReason: data.downtimeReason ?? null, defectKg: data.defectKg, changeover: data.changeover, sortOrder: data.sortOrder ?? 0,
+    planQty: data.planQty ?? 0, actualQty: data.actualQty ?? 0, standardCycle: safeDecimal(data.standardCycle), actualCycle: safeDecimal(data.actualCycle),
+    downtimeMin: data.downtimeMin ?? 0, downtimeReason: data.downtimeReason ?? null, defectKg: safeDecimal(data.defectKg), changeover: data.changeover ?? 0, sortOrder: data.sortOrder ?? 0,
   });
   return result[0].insertId;
 }
