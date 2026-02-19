@@ -133,8 +133,8 @@ export const lookupItems = mysqlTable("lookup_items", {
   value: varchar("value", { length: 256 }).notNull(),
   /** For molds category: links mold to its product name */
   parentProduct: varchar("parentProduct", { length: 256 }),
-  /** Standard weight for product (grams), used in shift reports */
-  standardWeight: decimal("standardWeight", { precision: 8, scale: 2 }),
+  /** Standard weight for product (grams), used in shift reports. Supports ranges like '16,2-16,9' */
+  standardWeight: varchar("standardWeight", { length: 50 }),
   sortOrder: int("sortOrder").default(0).notNull(),
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -176,8 +176,8 @@ export const shiftReportRows = mysqlTable("shift_report_rows", {
   actualQty: int("actualQty").default(0).notNull(),
   standardCycle: decimal("standardCycle", { precision: 8, scale: 2 }).default("0").notNull(),
   actualCycle: decimal("actualCycle", { precision: 8, scale: 2 }).default("0").notNull(),
-  /** Standard weight from lookup (grams) */
-  standardWeight: decimal("standardWeight", { precision: 8, scale: 2 }),
+  /** Standard weight from lookup (grams). Supports ranges like '16,2-16,9' */
+  standardWeight: varchar("standardWeight", { length: 50 }),
   /** Average weight measured during production (grams) */
   avgWeight: decimal("avgWeight", { precision: 8, scale: 2 }),
   downtimeMin: int("downtimeMin").default(0).notNull(),
