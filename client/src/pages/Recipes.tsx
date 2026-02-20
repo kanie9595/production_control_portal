@@ -648,10 +648,33 @@ function MaterialRequestDetail({
                     </td>
                     <td className="py-2 px-3 text-right">
                       {editingItemId === item.id ? (
-                        <input type="number" step="0.01" value={editActualKg}
-                          onChange={(e) => setEditActualKg(e.target.value)}
-                          className="w-20 bg-transparent border border-primary/30 rounded px-1 py-0.5 text-xs text-foreground text-right outline-none"
-                          autoFocus />
+                        <div className="flex items-center gap-1">
+                          <input type="number" step="0.01" value={editActualKg}
+                            onChange={(e) => setEditActualKg(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                updateItemMutation.mutate({
+                                  id: item.id,
+                                  actualKg: editActualKg || null,
+                                  batchNumber: editBatchNumber || null,
+                                });
+                                setEditingItemId(null);
+                              }
+                            }}
+                            className="w-16 sm:w-20 bg-transparent border border-primary/30 rounded px-1 py-0.5 text-xs text-foreground text-right outline-none"
+                            autoFocus />
+                          {/* Mobile confirm button */}
+                          <Button variant="ghost" size="icon" className="h-6 w-6 sm:hidden" onClick={() => {
+                            updateItemMutation.mutate({
+                              id: item.id,
+                              actualKg: editActualKg || null,
+                              batchNumber: editBatchNumber || null,
+                            });
+                            setEditingItemId(null);
+                          }}>
+                            <Check className="w-3 h-3 text-green-500" />
+                          </Button>
+                        </div>
                       ) : (
                         <button onClick={() => { setEditingItemId(item.id); setEditActualKg(item.actualKg ?? ""); setEditBatchNumber(item.batchNumber ?? ""); }}
                           className="text-foreground hover:text-primary cursor-pointer">
@@ -661,10 +684,22 @@ function MaterialRequestDetail({
                     </td>
                     <td className="py-2 px-3">
                       {editingItemId === item.id ? (
-                        <input value={editBatchNumber}
-                          onChange={(e) => setEditBatchNumber(e.target.value)}
-                          placeholder="№ партии"
-                          className="w-24 bg-transparent border border-primary/30 rounded px-1 py-0.5 text-xs text-foreground outline-none" />
+                        <div className="flex items-center gap-1">
+                          <input value={editBatchNumber}
+                            onChange={(e) => setEditBatchNumber(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                updateItemMutation.mutate({
+                                  id: item.id,
+                                  actualKg: editActualKg || null,
+                                  batchNumber: editBatchNumber || null,
+                                });
+                                setEditingItemId(null);
+                              }
+                            }}
+                            placeholder="№ партии"
+                            className="w-20 sm:w-24 bg-transparent border border-primary/30 rounded px-1 py-0.5 text-xs text-foreground outline-none" />
+                        </div>
                       ) : (
                         <button onClick={() => { setEditingItemId(item.id); setEditActualKg(item.actualKg ?? ""); setEditBatchNumber(item.batchNumber ?? ""); }}
                           className="text-foreground hover:text-primary cursor-pointer">
@@ -672,10 +707,11 @@ function MaterialRequestDetail({
                         </button>
                       )}
                     </td>
-                    <td className="py-2 px-3 flex gap-1">
+                    <td className="py-2 px-3">
                       {editingItemId === item.id ? (
-                        <>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
+                        <div className="flex gap-1">
+                          {/* Desktop confirm button */}
+                          <Button variant="ghost" size="icon" className="h-6 w-6 hidden sm:flex" onClick={() => {
                             updateItemMutation.mutate({
                               id: item.id,
                               actualKg: editActualKg || null,
@@ -688,7 +724,7 @@ function MaterialRequestDetail({
                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditingItemId(null)}>
                             <X className="w-3 h-3" />
                           </Button>
-                        </>
+                        </div>
                       ) : (
                         <Button variant="ghost" size="icon" className="h-6 w-6"
                           onClick={() => deleteItemMutation.mutate({ id: item.id })}>

@@ -41,11 +41,26 @@ export function useAuth(options?: UseAuthOptions) {
     }
   }, [logoutMutation, utils]);
 
+  // Sync user data to localStorage in useEffect (not in useMemo)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    
+    try {
+      if (meQuery.data) {
+        localStorage.setItem(
+          "manus-runtime-user-info",
+          JSON.stringify(meQuery.data)
+        );
+      } else {
+        localStorage.removeItem("manus-runtime-user-info");
+      }
+    } catch (e) {
+      // localStorage may not be available (private mode, etc.)
+      console.warn("[useAuth] localStorage not available:", e);
+    }
+  }, [meQuery.data]);
+
   const state = useMemo(() => {
-    localStorage.setItem(
-      "manus-runtime-user-info",
-      JSON.stringify(meQuery.data)
-    );
     return {
       user: meQuery.data ?? null,
       loading: meQuery.isLoading || logoutMutation.isPending,
@@ -67,7 +82,7 @@ export function useAuth(options?: UseAuthOptions) {
     if (typeof window === "undefined") return;
     if (window.location.pathname === redirectPath) return;
 
-    window.location.href = redirectPath
+    window.location.href = redirectPath;
   }, [
     redirectOnUnauthenticated,
     redirectPath,

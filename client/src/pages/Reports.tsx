@@ -141,10 +141,39 @@ export default function Reports() {
     { enabled: !!selectedMachineForRow }
   );
 
-  // Reset orderId when machine changes
+  // Auto-select first active order when machine changes
   useEffect(() => {
-    setNewRow(prev => ({ ...prev, orderId: undefined, planQty: 0, standardWeight: "", moldProduct: "", productColor: "" }));
-  }, [newRow.machineNumber]);
+    if (!selectedMachineForRow) {
+      setNewRow(prev => ({ ...prev, orderId: undefined, planQty: 0, standardWeight: "", moldProduct: "", productColor: "" }));
+      return;
+    }
+    
+    // Wait for active orders to load
+    if (activeOrdersQuery.isLoading) return;
+    
+    const activeOrders = activeOrdersQuery.data ?? [];
+    if (activeOrders.length > 0) {
+      // Auto-select first active order
+      const firstOrder = activeOrders[0];
+      const remaining = Math.max(0, (firstOrder.quantity ?? 0) - (firstOrder.completedQty ?? 0));
+      
+      // Find molds for this product
+      const productMolds = getOptions("molds").filter(m => m.parentProduct === firstOrder.product);
+      const selectedMold = productMolds.length === 1 ? productMolds[0] : null;
+      
+      setNewRow(prev => ({
+        ...prev,
+        orderId: firstOrder.id,
+        moldProduct: selectedMold ? selectedMold.value : (firstOrder.moldName ?? ""),
+        productColor: firstOrder.color ?? "",
+        planQty: remaining,
+        standardWeight: selectedMold?.standardWeight ?? "",
+      }));
+    } else {
+      // No active orders - reset fields
+      setNewRow(prev => ({ ...prev, orderId: undefined, planQty: 0, standardWeight: "", moldProduct: "", productColor: "" }));
+    }
+  }, [newRow.machineNumber, selectedMachineForRow, activeOrdersQuery.data, activeOrdersQuery.isLoading, lookupsQuery.data]);
 
   // Get molds filtered by selected product (from order)
   const filteredMolds = useMemo(() => {
@@ -275,26 +304,26 @@ export default function Reports() {
   return (
     <div className="min-h-screen" style={{ background: "oklch(0.16 0.01 260)" }}>
       <header className="border-b border-border sticky top-0 z-10" style={{ background: "oklch(0.14 0.01 260)" }}>
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => { if (selectedReport) { setSelectedReport(null); } else { setLocation("/"); } }}>
+        <div className="max-w-6xl mx-auto px-2 sm:px-4 h-auto sm:h-14 py-2 sm:py-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { if (selectedReport) { setSelectedReport(null); } else { setLocation("/"); } }}>
               <ArrowLeft className="w-4 h-4" />
             </Button>
-            <FileText className="w-5 h-5" style={{ color: "oklch(0.65 0.18 200)" }} />
-            <h1 className="font-mono text-sm font-semibold text-foreground">
+            <FileText className="w-5 h-5 hidden sm:block" style={{ color: "oklch(0.65 0.18 200)" }} />
+            <h1 className="font-mono text-xs sm:text-sm font-semibold text-foreground">
               {selectedReport ? "Детали отчёта" : "Сменные отчёты"}
             </h1>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-1 sm:gap-2 w-full sm:w-auto">
             {selectedReport && (
               <>
-                <Button variant="outline" size="sm" onClick={handleExportPdf} className="gap-2 font-mono text-xs">
-                  <Download className="w-3.5 h-3.5" /> PDF
+                <Button variant="outline" size="sm" onClick={handleExportPdf} className="gap-1 sm:gap-2 font-mono text-xs flex-1 sm:flex-none">
+                  <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">PDF</span>
                 </Button>
                 {isManager && (
                   <Button variant="outline" size="sm" onClick={() => setConfirmDeleteReport(selectedReport)}
-                    className="gap-2 font-mono text-xs text-destructive border-destructive/30 hover:bg-destructive/10">
-                    <Trash2 className="w-3.5 h-3.5" /> Удалить
+                    className="gap-1 sm:gap-2 font-mono text-xs text-destructive border-destructive/30 hover:bg-destructive/10 flex-1 sm:flex-none">
+                    <Trash2 className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Удалить</span>
                   </Button>
                 )}
               </>
@@ -302,15 +331,15 @@ export default function Reports() {
             {!selectedReport && (
               <>
                 {isManager && (
-                  <Button variant="outline" size="sm" onClick={() => setShowCustomFieldsManager(!showCustomFieldsManager)} className="gap-2 font-mono text-xs">
-                    <Settings2 className="w-3.5 h-3.5" /> Графы
+                  <Button variant="outline" size="sm" onClick={() => setShowCustomFieldsManager(!showCustomFieldsManager)} className="gap-1 sm:gap-2 font-mono text-xs flex-1 sm:flex-none">
+                    <Settings2 className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Графы</span>
                   </Button>
                 )}
-                <Button variant="outline" size="sm" onClick={() => setShowAnalytics(!showAnalytics)} className="gap-2 font-mono text-xs">
-                  <BarChart3 className="w-3.5 h-3.5" /> Аналитика
+                <Button variant="outline" size="sm" onClick={() => setShowAnalytics(!showAnalytics)} className="gap-1 sm:gap-2 font-mono text-xs flex-1 sm:flex-none">
+                  <BarChart3 className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Аналитика</span>
                 </Button>
-                <Button size="sm" onClick={() => setShowCreate(!showCreate)} className="gap-2 font-mono text-xs">
-                  <Plus className="w-3.5 h-3.5" /> Новый отчёт
+                <Button size="sm" onClick={() => setShowCreate(!showCreate)} className="gap-1 sm:gap-2 font-mono text-xs flex-1 sm:flex-none">
+                  <Plus className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Новый</span>
                 </Button>
               </>
             )}
