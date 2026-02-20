@@ -120,8 +120,8 @@ export const appRouter = router({
           const total = items.length;
           const completed = items.filter((i) => i.checked).length;
           const enrichedItems = items.map((ii) => {
-            const ti = allTemplateItems.find((t: { id: number }) => t.id === ii.templateItemId);
-            return { ...ii, text: (ti as any)?.text ?? `Пункт #${ii.templateItemId}` };
+            const ti = allTemplateItems.find((t) => t.id === ii.templateItemId);
+            return { ...ii, text: ti?.text ?? `Пункт #${ii.templateItemId}` };
           });
           results.push({
             instanceId: instance.id, userId: instance.userId, userName: user?.name ?? "Неизвестный",
@@ -497,9 +497,16 @@ export const appRouter = router({
         await db.updateMaterialRequest(input.requestId, { baseWeightKg: input.baseWeightKg });
         const items = await db.getMaterialRequestItems(input.requestId);
         const baseKg = parseFloat(input.baseWeightKg);
+        
+        // Calculate total percentage and normalize to 100%
+        const totalPercent = items.reduce((sum, item) => sum + parseFloat(item.percentage || "0"), 0);
+        const normalizeFactor = totalPercent > 0 ? 100 / totalPercent : 1;
+        
         for (const item of items) {
-          const pct = parseFloat(item.percentage);
-          const calcKg = ((pct / 100) * baseKg).toFixed(3);
+          const rawPct = parseFloat(item.percentage || "0");
+          // Normalize percentage to ensure total is 100%
+          const normalizedPct = rawPct * normalizeFactor;
+          const calcKg = ((normalizedPct / 100) * baseKg).toFixed(3);
           await db.updateMaterialRequestItem(item.id, { calculatedKg: calcKg });
         }
         return { success: true };

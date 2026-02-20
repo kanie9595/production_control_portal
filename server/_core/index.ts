@@ -8,6 +8,7 @@ import { registerChatRoutes } from "./chat";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { rateLimit, authRateLimit, apiRateLimit } from "./rateLimit";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -31,9 +32,31 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  
+  // Apply rate limiting
+  app.use(rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    maxRequests: 300, // 300 requests per minute
+  }));
+  
+  // Stricter rate limit for auth endpoints
+  app.use("/api/oauth", authRateLimit());
+  
+  // API rate limit for tRPC
+  app.use("/api/trpc", apiRateLimit());
+  
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  
+  // Security headers
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("X-XSS-Protection", "1; mode=block");
+    next();
+  });
+  
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // Chat API with streaming and tool calling
