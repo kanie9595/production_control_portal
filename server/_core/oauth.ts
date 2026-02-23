@@ -10,6 +10,32 @@ function getQueryParam(req: Request, key: string): string | undefined {
 }
 
 export function registerOAuthRoutes(app: Express) {
+  app.get("/api/oauth/login", async (req: Request, res: Response) => {
+    const appId = process.env.VITE_APP_ID;
+    const oauthPortalUrl = process.env.VITE_OAUTH_PORTAL_URL;
+
+    if (!appId || !oauthPortalUrl) {
+      res.redirect(302, "/how-to-register");
+      return;
+    }
+
+    const origin = `${req.protocol}://${req.get("host")}`;
+    const redirectUri = `${origin}/api/oauth/callback`;
+    const state = Buffer.from(redirectUri).toString("base64");
+
+    try {
+      const url = new URL("/app-auth", oauthPortalUrl);
+      url.searchParams.set("appId", appId);
+      url.searchParams.set("redirectUri", redirectUri);
+      url.searchParams.set("state", state);
+      url.searchParams.set("type", "signIn");
+      res.redirect(302, url.toString());
+    } catch (error) {
+      console.error("[OAuth] Failed to build login URL", error);
+      res.redirect(302, "/how-to-register");
+    }
+  });
+
   app.get("/api/oauth/callback", async (req: Request, res: Response) => {
     const code = getQueryParam(req, "code");
     const state = getQueryParam(req, "state");

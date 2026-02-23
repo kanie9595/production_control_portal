@@ -2,29 +2,7 @@ export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
 // Generate login URL at runtime so redirect URI reflects the current origin.
 export const getLoginUrl = () => {
-  const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
-  const appId = import.meta.env.VITE_APP_ID;
-  const redirectUri = `${window.location.origin}/api/oauth/callback`;
-  const state = btoa(redirectUri);
-
-  const fallbackPath = "/how-to-register";
-  if (!oauthPortalUrl) {
-    console.error("[Auth] Missing VITE_OAUTH_PORTAL_URL. Falling back to local help page.");
-    return fallbackPath;
-  }
-
-  let url: URL;
-  try {
-    url = new URL("/app-auth", oauthPortalUrl);
-  } catch (error) {
-    console.error("[Auth] Invalid VITE_OAUTH_PORTAL_URL. Falling back to local help page.", error);
-    return fallbackPath;
-  }
-
-  url.searchParams.set("appId", appId);
-  url.searchParams.set("redirectUri", redirectUri);
-  url.searchParams.set("state", state);
-  url.searchParams.set("type", "signIn");
-
-  return url.toString();
+  // Build OAuth redirect URL on the server where environment values are stable
+  // across deployments, then redirect from client.
+  return "/api/oauth/login";
 };
