@@ -32,6 +32,15 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+
+  // Health endpoints must be available before any heavy middleware/rate limits,
+  // so platform probes (Railway/Render/etc.) can reliably mark the instance healthy.
+  app.get("/healthz", (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
+  app.head("/healthz", (_req, res) => {
+    res.status(200).end();
+  });
   
   // Apply rate limiting
   app.use(rateLimit({
@@ -77,14 +86,20 @@ async function startServer() {
   }
 
   const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
+  const isProduction = process.env.NODE_ENV === "production";
 
-  if (port !== preferredPort) {
+  // PaaS environments (Railway/Render/etc.) expect the app to bind exactly
+  // to the provided PORT. In production we must not auto-switch ports.
+  const port = isProduction
+    ? preferredPort
+    : await findAvailablePort(preferredPort);
+
+  if (!isProduction && port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
-  server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${port}/`);
   });
 }
 
