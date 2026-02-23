@@ -308,6 +308,7 @@ export const appRouter = router({
   // ============ MACHINES ============
   machines: router({
     list: protectedProcedure.query(async () => db.getAllMachines()),
+    board: protectedProcedure.query(async () => db.getMachineBoard()),
     updateStatus: protectedProcedure
       .input(z.object({ id: z.number(), status: z.enum(["running", "idle", "maintenance", "changeover"]) }))
       .mutation(async ({ input }) => { await db.updateMachineStatus(input.id, input.status); return { success: true }; }),
@@ -397,6 +398,12 @@ export const appRouter = router({
         completedQty: z.number().optional(), moldName: z.string().optional(), notes: z.string().optional(),
       }))
       .mutation(async ({ input }) => { const { orderId, ...data } = input; await db.updateOrder(orderId, data); return { success: true }; }),
+    reassignMachine: managerProcedure
+      .input(z.object({ orderId: z.number(), machineId: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.reassignOrderMachine(input.orderId, input.machineId);
+        return { success: true };
+      }),
     // Get active/pending orders for a machine (for report linking)
     activeOrdersForMachine: protectedProcedure
       .input(z.object({ machineId: z.number() }))
@@ -511,6 +518,9 @@ export const appRouter = router({
         }
         return { success: true };
       }),
+    readiness: protectedProcedure
+      .input(z.object({ requestId: z.number() }))
+      .query(async ({ input }) => db.getMaterialRequestReadiness(input.requestId)),
   }),
 
   // ============ CUSTOM REPORT FIELDS ============
@@ -533,6 +543,13 @@ export const appRouter = router({
     products: protectedProcedure.query(async () => db.getProductAnalytics()),
     materials: protectedProcedure.query(async () => db.getMaterialAnalytics()),
     orders: protectedProcedure.query(async () => db.getOrderAnalytics()),
+    overview: protectedProcedure
+      .input(z.object({ dateFrom: z.string().optional(), dateTo: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        const from = input?.dateFrom ? new Date(input.dateFrom) : undefined;
+        const to = input?.dateTo ? new Date(input.dateTo) : undefined;
+        return db.getProductionKpis(from, to);
+      }),
   }),
 
   // ============ ENHANCED LOOKUPS (bulk operations) ============
