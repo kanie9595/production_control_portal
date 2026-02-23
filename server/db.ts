@@ -489,6 +489,33 @@ export async function updateMachineStatus(id: number, status: "running" | "idle"
   await db.update(machines).set({ status }).where(eq(machines.id, id));
 }
 
+export async function getMachineBoard() {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [allMachines, allOrders] = await Promise.all([
+    db.select().from(machines).orderBy(asc(machines.number)),
+    db.select().from(orders).orderBy(desc(orders.createdAt)),
+  ]);
+
+  return allMachines.map((machine) => {
+    const machineOrders = allOrders.filter((order) => order.machineId === machine.id);
+    const activeOrder = machineOrders.find((order) => order.status === "in_progress") ?? null;
+    const queue = machineOrders.filter((order) => order.status === "pending");
+    const utilization = activeOrder && activeOrder.quantity > 0
+      ? Math.min(100, Math.round((activeOrder.completedQty / activeOrder.quantity) * 100))
+      : 0;
+
+    return {
+      ...machine,
+      activeOrder,
+      queue,
+      queueSize: queue.length,
+      utilization,
+    };
+  });
+}
+
 // ============ ORDERS ============
 
 export async function createOrder(data: {
@@ -538,6 +565,12 @@ export async function updateOrder(orderId: number, data: Partial<{ product: stri
   const db = await getDb();
   if (!db) return;
   await db.update(orders).set(data).where(eq(orders.id, orderId));
+}
+
+export async function reassignOrderMachine(orderId: number, machineId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(orders).set({ machineId }).where(eq(orders.id, orderId));
 }
 
 // ============ MATERIAL RECIPES ============
@@ -724,6 +757,89 @@ export async function getMaterialRequestItems(requestId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(materialRequestItems).where(eq(materialRequestItems.requestId, requestId)).orderBy(asc(materialRequestItems.sortOrder));
+}
+
+export async function getMaterialRequestReadiness(requestId: number) {
+  const request = await getMaterialRequestById(requestId);
+  const items = await getMaterialRequestItems(requestId);
+  const missingBatch = items.filter((item) => !item.batchNumber);
+  const missingActual = items.filter((item) => item.actualKg == null);
+  const actualTotalKg = items.reduce((sum, item) => sum + parseFloat(item.actualKg ?? "0"), 0);
+  const calculatedTotalKg = items.reduce((sum, item) => sum + parseFloat(item.calculatedKg ?? "0"), 0);
+
+  return {
+    request,
+    items,
+    totals: {
+      calculatedTotalKg: Number(calculatedTotalKg.toFixed(3)),
+      actualTotalKg: Number(actualTotalKg.toFixed(3)),
+      componentCount: items.length,
+    },
+    missing: {
+      batchNumbers: missingBatch.map((item) => item.id),
+      actualWeights: missingActual.map((item) => item.id),
+    },
+    isReadyForIssue: items.length > 0 && missingBatch.length === 0 && missingActual.length === 0,
+  };
+}
+
+export async function getProductionKpis(dateFrom?: Date, dateTo?: Date) {
+  const db = await getDb();
+  if (!db) {
+    return {
+      ordersTotal: 0,
+      ordersCompleted: 0,
+      completionRate: 0,
+      plannedQty: 0,
+      producedQty: 0,
+      uptimeByMachine: [],
+    };
+  }
+
+  const orderFilters = [];
+  if (dateFrom) orderFilters.push(gte(orders.createdAt, dateFrom));
+  if (dateTo) orderFilters.push(lte(orders.createdAt, dateTo));
+
+  const reportRowFilters = [];
+  if (dateFrom) reportRowFilters.push(gte(shiftReportRows.createdAt, dateFrom));
+  if (dateTo) reportRowFilters.push(lte(shiftReportRows.createdAt, dateTo));
+
+  const ordersQuery = db.select().from(orders);
+  const reportRowsQuery = db.select().from(shiftReportRows);
+
+  const [filteredOrders, reportRows, allMachines] = await Promise.all([
+    orderFilters.length ? ordersQuery.where(and(...orderFilters)) : ordersQuery,
+    reportRowFilters.length ? reportRowsQuery.where(and(...reportRowFilters)) : reportRowsQuery,
+    db.select().from(machines),
+  ]);
+
+  const ordersTotal = filteredOrders.length;
+  const ordersCompleted = filteredOrders.filter((o) => o.status === "completed").length;
+  const plannedQty = filteredOrders.reduce((sum, o) => sum + (o.quantity ?? 0), 0);
+  const producedQty = filteredOrders.reduce((sum, o) => sum + (o.completedQty ?? 0), 0);
+
+  const uptimeByMachine = allMachines.map((machine) => {
+    const rows = reportRows.filter((row) => row.machineNumber === machine.number);
+    const downtimeMin = rows.reduce((sum, row) => sum + (row.downtimeMin ?? 0), 0);
+    const runtimeMin = rows.reduce((sum, row) => sum + Math.max(0, row.actualQty ?? 0), 0);
+    const total = runtimeMin + downtimeMin;
+    return {
+      machineId: machine.id,
+      machineNumber: machine.number,
+      downtimeMin,
+      runtimeMin,
+      uptimePercent: total > 0 ? Math.round((runtimeMin / total) * 100) : 0,
+    };
+  });
+
+  return {
+    ordersTotal,
+    ordersCompleted,
+    completionRate: ordersTotal > 0 ? Math.round((ordersCompleted / ordersTotal) * 100) : 0,
+    plannedQty,
+    producedQty,
+    uptimeByMachine,
+  };
 }
 
 export async function updateMaterialRequest(id: number, data: Partial<{ baseWeightKg: string | null; status: "pending" | "in_progress" | "completed"; notes: string | null }>) {
