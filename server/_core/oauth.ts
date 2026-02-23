@@ -12,10 +12,21 @@ function getQueryParam(req: Request, key: string): string | undefined {
 
 export function registerOAuthRoutes(app: Express) {
   app.get("/api/oauth/login", async (req: Request, res: Response) => {
+<<<<<<< codex/review-project-for-improvement-suggestions-cvo7wp
+    const appId = ENV.appId || getQueryParam(req, "appId") || "";
+    const oauthPortalUrl = ENV.oAuthPortalUrl || getQueryParam(req, "oauthPortalUrl") || "";
+
+    if (!appId || !oauthPortalUrl) {
+      console.error("[OAuth] Missing oauth config for login redirect", {
+        hasAppId: Boolean(appId),
+        hasPortalUrl: Boolean(oauthPortalUrl),
+      });
+=======
     const appId = ENV.appId;
     const oauthPortalUrl = ENV.oAuthPortalUrl;
 
     if (!appId || !oauthPortalUrl) {
+>>>>>>> main
       res.redirect(302, "/how-to-register");
       return;
     }
