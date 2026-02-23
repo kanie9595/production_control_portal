@@ -32,6 +32,15 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+
+  // Health endpoints must be available before any heavy middleware/rate limits,
+  // so platform probes (Railway/Render/etc.) can reliably mark the instance healthy.
+  app.get("/healthz", (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
+  app.head("/healthz", (_req, res) => {
+    res.status(200).end();
+  });
   
   // Apply rate limiting
   app.use(rateLimit({
