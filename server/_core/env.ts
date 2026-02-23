@@ -3,6 +3,7 @@ import { z } from "zod";
 // Environment variable schema for validation
 const envSchema = z.object({
   VITE_APP_ID: z.string().min(1, "VITE_APP_ID is required"),
+  VITE_OAUTH_PORTAL_URL: z.string().url("VITE_OAUTH_PORTAL_URL must be a valid URL").optional(),
   JWT_SECRET: z.string().min(1, "JWT_SECRET is required"),
   DATABASE_URL: z.string().url("DATABASE_URL must be a valid URL"),
   OAUTH_SERVER_URL: z.string().url("OAUTH_SERVER_URL must be a valid URL"),
@@ -32,6 +33,13 @@ const validatedEnv = parseEnv();
 
 export const ENV = {
   appId: validatedEnv.VITE_APP_ID ?? "",
+  oAuthPortalUrl: validatedEnv.VITE_OAUTH_PORTAL_URL ?? (() => {
+    try {
+      return validatedEnv.OAUTH_SERVER_URL ? new URL(validatedEnv.OAUTH_SERVER_URL).origin : "";
+    } catch {
+      return "";
+    }
+  })(),
   cookieSecret: validatedEnv.JWT_SECRET ?? "",
   databaseUrl: validatedEnv.DATABASE_URL ?? "",
   oAuthServerUrl: validatedEnv.OAUTH_SERVER_URL ?? "",

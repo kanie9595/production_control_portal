@@ -13,6 +13,7 @@ Set all required variables:
 - `NODE_ENV=production`
 - `PORT=3000`
 - `VITE_APP_ID`
+- `VITE_OAUTH_PORTAL_URL`
 - `JWT_SECRET`
 - `DATABASE_URL`
 - `OAUTH_SERVER_URL`

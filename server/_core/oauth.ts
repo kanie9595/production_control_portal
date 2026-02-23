@@ -2,6 +2,7 @@ import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import type { Express, Request, Response } from "express";
 import * as db from "../db";
 import { getSessionCookieOptions } from "./cookies";
+import { ENV } from "./env";
 import { sdk } from "./sdk";
 
 function getQueryParam(req: Request, key: string): string | undefined {
@@ -11,8 +12,8 @@ function getQueryParam(req: Request, key: string): string | undefined {
 
 export function registerOAuthRoutes(app: Express) {
   app.get("/api/oauth/login", async (req: Request, res: Response) => {
-    const appId = process.env.VITE_APP_ID;
-    const oauthPortalUrl = process.env.VITE_OAUTH_PORTAL_URL;
+    const appId = ENV.appId;
+    const oauthPortalUrl = ENV.oAuthPortalUrl;
 
     if (!appId || !oauthPortalUrl) {
       res.redirect(302, "/how-to-register");
