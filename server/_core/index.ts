@@ -70,6 +70,11 @@ async function startServer() {
   registerOAuthRoutes(app);
   // Chat API with streaming and tool calling
   registerChatRoutes(app);
+  // Simple health endpoint for orchestration/monitoring
+  app.get("/healthz", (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",
