@@ -61,6 +61,11 @@ async function startServer() {
   registerOAuthRoutes(app);
   // Chat API with streaming and tool calling
   registerChatRoutes(app);
+  // Simple health endpoint for orchestration/monitoring
+  app.get("/healthz", (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",
@@ -77,14 +82,20 @@ async function startServer() {
   }
 
   const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
+  const isProduction = process.env.NODE_ENV === "production";
 
-  if (port !== preferredPort) {
+  // PaaS environments (Railway/Render/etc.) expect the app to bind exactly
+  // to the provided PORT. In production we must not auto-switch ports.
+  const port = isProduction
+    ? preferredPort
+    : await findAvailablePort(preferredPort);
+
+  if (!isProduction && port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
-  server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${port}/`);
   });
 }
 
