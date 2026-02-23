@@ -7,7 +7,20 @@ export const getLoginUrl = () => {
   const redirectUri = `${window.location.origin}/api/oauth/callback`;
   const state = btoa(redirectUri);
 
-  const url = new URL(`${oauthPortalUrl}/app-auth`);
+  const fallbackPath = "/how-to-register";
+  if (!oauthPortalUrl) {
+    console.error("[Auth] Missing VITE_OAUTH_PORTAL_URL. Falling back to local help page.");
+    return fallbackPath;
+  }
+
+  let url: URL;
+  try {
+    url = new URL("/app-auth", oauthPortalUrl);
+  } catch (error) {
+    console.error("[Auth] Invalid VITE_OAUTH_PORTAL_URL. Falling back to local help page.", error);
+    return fallbackPath;
+  }
+
   url.searchParams.set("appId", appId);
   url.searchParams.set("redirectUri", redirectUri);
   url.searchParams.set("state", state);
